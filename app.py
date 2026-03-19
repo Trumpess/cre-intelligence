@@ -435,8 +435,8 @@ with tab1:
         }
         status_colours = {"good":"#10b981","warn":"#f59e0b","bad":"#ef4444"}
         metrics = r["metrics"]
-        cols = st.columns(3)
-        for i, (k, v) in enumerate(metrics.items()):
+        cols = st.columns(5)
+        for i, (k, v) in enumerate({key:val for key,val in metrics.items() if key != "mobile"}.items()):
             sc = status_colours.get(v["status"],"#94a3b8")
             with cols[i % 3]:
                 detail_html = v["detail"].replace("\n","<br>")
@@ -703,7 +703,7 @@ with tab3:
         if n_sel > 0:
             st.caption(f"{n_sel} report{'s' if n_sel!=1 else ''} selected")
 
-        cols = st.columns(3)
+        cols = st.columns(5)
         for i, r in enumerate(saved):
             sel     = r["id"] in st.session_state.get("selected_ids", set())
             crit    = sum(1 for g in r["gaps"] if g["sev"]=="critical")
