@@ -141,14 +141,3 @@ def _no_data(error: str) -> dict:
         "occ_score": 50, "summary": "Occupier data unavailable",
         "error": error, "companies": [],
     }
-```
-
-Save with **Ctrl+S**, then in the terminal type these one at a time:
-```
-git add api/companies_house.py
-```
-```
-git commit -m "Fix Companies House exact postcode matching"
-```
-```
-git push
