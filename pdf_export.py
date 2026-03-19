@@ -1,7 +1,7 @@
 """
 pdf_export.py
-Generates internal briefing PDFs using ReportLab.
-Matches the dark-themed design of the HTML tool but adapted for print.
+Clean, print-friendly internal briefing PDFs.
+Black text on white — designed to be read on paper or screen.
 """
 
 import io
@@ -16,559 +16,701 @@ from reportlab.platypus import (
 )
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
-# ── Colour palette ────────────────────────────────────────────────────────────
-NAVY      = colors.HexColor("#0b1829")
-NAVY_MID  = colors.HexColor("#161b26")
-NAVY_LITE = colors.HexColor("#1c2333")
-TEAL      = colors.HexColor("#00c8f0")
-TEAL_DIM  = colors.HexColor("#0099b8")
-AMBER     = colors.HexColor("#f5a623")
-RED       = colors.HexColor("#f04f4f")
-GREEN     = colors.HexColor("#3dd68c")
-WHITE     = colors.HexColor("#e8edf5")
-MUTED     = colors.HexColor("#6b7a99")
-DIM       = colors.HexColor("#3d4f6b")
-PAPER     = colors.HexColor("#f1f4f8")
-
 W, H = A4
-M = 16 * mm
+M = 18 * mm
+CW = W - 2 * M
+
+# ── Colours ───────────────────────────────────────────────────────────────────
+NAVY    = colors.HexColor("#0b1829")
+TEAL    = colors.HexColor("#0099b8")
+RED     = colors.HexColor("#dc2626")
+AMBER   = colors.HexColor("#d97706")
+GREEN   = colors.HexColor("#059669")
+GREY    = colors.HexColor("#64748b")
+LGREY   = colors.HexColor("#f1f5f9")
+MGREY   = colors.HexColor("#e2e8f0")
+BLACK   = colors.HexColor("#0f172a")
+WHITE   = colors.white
 
 
-def _sev_colour(sev: str) -> colors.Color:
-    return {"critical": RED, "advisory": AMBER, "unconfirmed": AMBER}.get(sev, AMBER)
-
-
-def _score_colour(score: int) -> colors.Color:
+def _score_colour(score):
     if score >= 75: return GREEN
     if score >= 55: return AMBER
     return RED
 
 
+def _sev_colour(sev):
+    return {"critical": RED, "advisory": AMBER, "unconfirmed": TEAL}.get(sev, AMBER)
+
+
 def _styles():
-    base = getSampleStyleSheet()
-    def S(name, **kwargs):
-        return ParagraphStyle(name, parent=base["Normal"], **kwargs)
+    b = getSampleStyleSheet()
+    def S(name, **kw):
+        return ParagraphStyle(name, parent=b["Normal"], **kw)
     return {
-        "mono9":   S("mono9",   fontName="Courier",      fontSize=7,  textColor=MUTED,  leading=10),
-        "mono9t":  S("mono9t",  fontName="Courier",      fontSize=7,  textColor=TEAL,   leading=10),
-        "mono9r":  S("mono9r",  fontName="Courier",      fontSize=7,  textColor=RED,    leading=10),
-        "mono9a":  S("mono9a",  fontName="Courier",      fontSize=7,  textColor=AMBER,  leading=10),
-        "mono9g":  S("mono9g",  fontName="Courier",      fontSize=7,  textColor=GREEN,  leading=10),
-        "body":    S("body",    fontName="Helvetica",    fontSize=8,  textColor=MUTED,  leading=12),
-        "bodyW":   S("bodyW",   fontName="Helvetica",    fontSize=8,  textColor=WHITE,  leading=12),
-        "bold9":   S("bold9",   fontName="Helvetica-Bold",fontSize=9, textColor=WHITE,  leading=12),
-        "bold10":  S("bold10",  fontName="Helvetica-Bold",fontSize=10,textColor=WHITE,  leading=14),
-        "bold12":  S("bold12",  fontName="Helvetica-Bold",fontSize=12,textColor=WHITE,  leading=16),
-        "bold18":  S("bold18",  fontName="Helvetica-Bold",fontSize=18,textColor=WHITE,  leading=22),
-        "h_teal":  S("h_teal",  fontName="Helvetica-Bold",fontSize=11,textColor=TEAL,   leading=14),
-        "small":   S("small",   fontName="Helvetica",    fontSize=7,  textColor=MUTED,  leading=10),
-        "smallW":  S("smallW",  fontName="Helvetica",    fontSize=7,  textColor=WHITE,  leading=10),
-        "italic":  S("italic",  fontName="Helvetica-Oblique",fontSize=8,textColor=MUTED,leading=12),
+        "h1":      S("h1",  fontName="Helvetica-Bold",    fontSize=20, textColor=NAVY,  leading=26, spaceAfter=4),
+        "h2":      S("h2",  fontName="Helvetica-Bold",    fontSize=14, textColor=NAVY,  leading=18, spaceAfter=3),
+        "h3":      S("h3",  fontName="Helvetica-Bold",    fontSize=11, textColor=NAVY,  leading=14, spaceAfter=2),
+        "body":    S("body",fontName="Helvetica",          fontSize=9,  textColor=BLACK, leading=13),
+        "small":   S("sml", fontName="Helvetica",          fontSize=8,  textColor=GREY,  leading=11),
+        "bold9":   S("b9",  fontName="Helvetica-Bold",     fontSize=9,  textColor=BLACK, leading=13),
+        "bold10":  S("b10", fontName="Helvetica-Bold",     fontSize=10, textColor=BLACK, leading=14),
+        "mono":    S("mo",  fontName="Courier",            fontSize=7.5,textColor=GREY,  leading=10),
+        "mono_b":  S("mob", fontName="Courier-Bold",       fontSize=7.5,textColor=NAVY,  leading=10),
+        "teal":    S("te",  fontName="Helvetica-Bold",     fontSize=9,  textColor=TEAL,  leading=12),
+        "red":     S("re",  fontName="Helvetica-Bold",     fontSize=9,  textColor=RED,   leading=12),
+        "green":   S("gr",  fontName="Helvetica-Bold",     fontSize=9,  textColor=GREEN, leading=12),
+        "amber":   S("am",  fontName="Helvetica-Bold",     fontSize=9,  textColor=AMBER, leading=12),
+        "italic":  S("it",  fontName="Helvetica-Oblique",  fontSize=9,  textColor=GREY,  leading=12),
+        "white9":  S("w9",  fontName="Helvetica",          fontSize=9,  textColor=WHITE, leading=13),
+        "whiteb":  S("wb",  fontName="Helvetica-Bold",     fontSize=9,  textColor=WHITE, leading=13),
+        "whiteh":  S("wh",  fontName="Helvetica-Bold",     fontSize=13, textColor=WHITE, leading=17),
     }
 
 
-def _coloured_table(rows, col_widths, row_heights=None, style_cmds=None):
-    t = Table(rows, colWidths=col_widths, rowHeights=row_heights)
-    cmds = [
-        ("BACKGROUND", (0, 0), (-1, -1), NAVY_MID),
-        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",(0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",(0,0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING",(0,0),(-1, -1), 5),
-        ("GRID",       (0, 0), (-1, -1), 0.3, DIM),
-    ]
-    if style_cmds:
-        cmds.extend(style_cmds)
-    t.setStyle(TableStyle(cmds))
-    return t
-
-
-def _header_bar(text: str, styles: dict) -> Table:
-    """Full-width dark header bar."""
-    t = Table([[Paragraph(text, styles["mono9t"])]], colWidths=[W - 2 * M])
+def _section_header(title, S):
+    """Dark navy section header bar."""
+    t = Table(
+        [[Paragraph(title, S["whiteb"])]],
+        colWidths=[CW]
+    )
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), NAVY_LITE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING",  (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING",(0,0), (-1, -1), 6),
-        ("LINEBELOW",   (0, 0), (-1, -1), 0.5, TEAL_DIM),
+        ("BACKGROUND", (0,0), (-1,-1), NAVY),
+        ("TOPPADDING",    (0,0), (-1,-1), 7),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+        ("LEFTPADDING",   (0,0), (-1,-1), 10),
     ]))
     return t
+
+
+def _divider():
+    return HRFlowable(width=CW, thickness=0.5, color=MGREY, spaceAfter=6, spaceBefore=6)
+
+
+def _footer_cb(canvas, doc, postcode, page_label):
+    canvas.saveState()
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(GREY)
+    canvas.drawString(M, 10*mm, f"Modern Networks — Internal Sales Briefing — {postcode} — CONFIDENTIAL")
+    canvas.drawRightString(W - M, 10*mm, f"Page {doc.page}  ·  {page_label}")
+    canvas.restoreState()
 
 
 def generate_briefing_pdf(report: dict, angle: str) -> bytes:
-    """Generate a 4-page internal briefing PDF for a single property."""
     buf = io.BytesIO()
+    S   = _styles()
+    P   = report.get("prospect", {})
+    ws  = report.get("wiredScore", {})
+    pc  = report.get("postcode", "")
+    score = report.get("score", 0)
+    sc_col = _score_colour(score)
+
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=M, rightMargin=M, topMargin=M, bottomMargin=14 * mm,
-        title=f"MN Briefing — {report.get('postcode', '')}",
+        leftMargin=M, rightMargin=M,
+        topMargin=M, bottomMargin=20*mm,
+        title=f"MN Briefing — {pc}",
     )
-    S = _styles()
-    story = []
-    CW = W - 2 * M
-    P = report.get("prospect", {})
-    ws = report.get("wiredScore", {})
-    score = report.get("score", 0)
-    sc = _score_colour(score)
 
-    ANGLES = {
-        "owner":      "Building Owner — asset value, EPC risk, valuation uplift",
-        "agent":      "Managing Agent — occupier satisfaction, churn, day-one connectivity",
-        "management": "Building Management — operational resilience, security, insurance compliance",
+    ANGLE_TITLES = {
+        "owner":      "Building Owner",
+        "agent":      "Managing Agent",
+        "management": "Building Management",
     }
-    angle_desc = ANGLES.get(angle, "")
+    ANGLE_NOTES = {
+        "owner":      "Frame around asset value, EPC compliance risk, and the 4.9% valuation uplift for 1Gbps-certified buildings.",
+        "agent":      "Frame around occupier satisfaction, complaint reduction, and day-one connectivity.",
+        "management": "Frame around operational resilience, security compliance, and insurance requirements.",
+    }
+    TALKING_POINTS = {
+        "owner": [
+            "Buildings with 1Gbps connectivity and WiredScore certification achieve 4.9% higher valuations.",
+            "EPC compliance risk is a direct threat to lettability under proposed 2027 legislation — the digital infrastructure component is addressable now.",
+            "Research shows 19.4% lower tenant churn where buildings have properly managed digital infrastructure.",
+            "Modern Networks are WiredScore Accredited Professionals. Most buildings certify within 60 days.",
+        ],
+        "agent": [
+            "Connectivity and mobile signal are the top two categories of occupier complaints in multi-tenant buildings.",
+            "Zero onboarding delays when Modern Networks provides day-one managed connectivity.",
+            "We work with CBRE, JLL, Savills, and Cushman & Wakefield — portfolio WiredScore certification at scale.",
+            "One contract, one invoice, one point of contact for connectivity, IT support, and security.",
+        ],
+        "management": [
+            "Insurers are requiring demonstrable cybersecurity controls for commercial buildings.",
+            "We help meet ISO 27001 and GDPR obligations via a single managed service with regular audits.",
+            "Resilient managed connectivity with geographic redundancy keeps building systems online.",
+            "One managed services partner for network, security, and cloud across 2,000+ UK properties.",
+        ],
+    }
 
-    # ── PAGE 1: COVER ─────────────────────────────────────────────────────────
-    # Classification strip
-    t = Table([[Paragraph("INTERNAL — MODERN NETWORKS SALES INTELLIGENCE  ·  NOT FOR EXTERNAL DISTRIBUTION", S["mono9t"])]],
-              colWidths=[CW])
+    story = []
+
+    # ══════════════════════════════════════════════════════════════
+    # PAGE 1 — COVER & PROSPECT DETAILS
+    # ══════════════════════════════════════════════════════════════
+
+    # Top classification bar
+    t = Table([[Paragraph(
+        "INTERNAL  ·  MODERN NETWORKS SALES BRIEFING  ·  NOT FOR EXTERNAL DISTRIBUTION",
+        S["whiteb"]
+    )]], colWidths=[CW])
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0,0),(-1,-1), NAVY_LITE),
-        ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
-        ("LEFTPADDING",(0,0),(-1,-1),8),
-        ("LINEBELOW",(0,0),(-1,-1),1,TEAL),
+        ("BACKGROUND", (0,0),(-1,-1), NAVY),
+        ("TOPPADDING",    (0,0),(-1,-1), 6),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 6),
+        ("LEFTPADDING",   (0,0),(-1,-1), 10),
     ]))
     story.append(t)
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 8*mm))
 
-    # Logo + ref
-    story.append(Paragraph("Modern Networks  |  Sales Intelligence Platform", S["h_teal"]))
-    story.append(Paragraph(
-        f"Ref: MN-{report.get('postcode','').replace(' ','')}  ·  "
-        f"Prepared by: {P.get('staff','MN Staff')}  ({P.get('initials','MN')})  ·  {report.get('savedAt','')}",
-        S["mono9"]
-    ))
-    story.append(HRFlowable(width=CW, thickness=0.5, color=TEAL_DIM))
-    story.append(Spacer(1, 6*mm))
+    # Title row — property name + score box side by side
+    company_str = P.get("company","")
+    title_str   = f"{company_str} — {pc}" if company_str else f"Building Assessment — {pc}"
 
-    # Title + score side by side
-    postcode_str = report.get("postcode", "")
-    company_str  = P.get("company", "")
-    title_text   = f"{company_str} — {postcode_str}" if company_str else f"Building Assessment — {postcode_str}"
-
-    score_para = Paragraph(f'<font size="28" color="{sc.hexval()}">{score}</font><br/>'
-                           f'<font size="8" color="{MUTED.hexval()}">/100</font><br/>'
-                           f'<font size="7" color="{sc.hexval()}">{report.get("scoreLabel","")}</font>',
-                           ParagraphStyle("sc", fontName="Helvetica-Bold", alignment=TA_CENTER))
-    title_col = [
-        Paragraph(title_text, S["bold18"]),
-        Spacer(1, 2*mm),
-        Paragraph(angle_desc, S["italic"]),
-    ]
-    header_row = Table(
-        [[title_col, score_para]],
-        colWidths=[CW - 35*mm, 35*mm]
+    score_table = Table(
+        [[
+            Paragraph(f'<font size="32" color="{sc_col.hexval()}"><b>{score}</b></font>', S["body"]),
+        ],[
+            Paragraph("/100", S["small"]),
+        ],[
+            Paragraph(report.get("scoreLabel",""), ParagraphStyle(
+                "sl", fontName="Helvetica-Bold", fontSize=8,
+                textColor=sc_col, leading=10
+            )),
+        ]],
+        colWidths=[30*mm]
     )
-    header_row.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("LEFTPADDING",(0,0),(0,-1),8),
-        ("TOPPADDING",(0,0),(-1,-1),10),
-        ("BOTTOMPADDING",(0,0),(-1,-1),10),
+    score_table.setStyle(TableStyle([
+        ("ALIGN",         (0,0),(-1,-1), "CENTER"),
+        ("BACKGROUND",    (0,0),(-1,-1), LGREY),
+        ("TOPPADDING",    (0,0),(-1,-1), 6),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 6),
+        ("BOX",           (0,0),(-1,-1), 0.5, MGREY),
     ]))
-    story.append(header_row)
-    story.append(Spacer(1, 5*mm))
 
-    # Prospect details table
+    title_table = Table(
+        [[
+            [
+                Paragraph(title_str, S["h1"]),
+                Paragraph(
+                    f"UPRN {report.get('uprn','N/A')}  ·  Generated {report.get('savedAt','')}  ·  "
+                    f"Prepared by {P.get('staff','MN Staff')} ({P.get('initials','MN')})",
+                    S["mono"]
+                ),
+                Spacer(1, 3*mm),
+                Paragraph(
+                    f"<b>Sales angle:</b> {ANGLE_TITLES.get(angle,'')}"
+                    f"  ·  <i>{ANGLE_NOTES.get(angle,'')}</i>",
+                    S["small"]
+                ),
+            ],
+            score_table,
+        ]],
+        colWidths=[CW - 34*mm, 34*mm]
+    )
+    title_table.setStyle(TableStyle([
+        ("VALIGN",  (0,0),(-1,-1), "TOP"),
+        ("LEFTPADDING",  (0,0),(0,-1), 0),
+        ("RIGHTPADDING", (0,0),(0,-1), 6),
+    ]))
+    story.append(title_table)
+    story.append(_divider())
+    story.append(Spacer(1, 2*mm))
+
+    # Prospect details — two-column grid
+    story.append(_section_header("PROSPECT DETAILS", S))
+    story.append(Spacer(1, 3*mm))
+
     def _prow(label, value):
-        return [Paragraph(label, S["mono9"]), Paragraph(str(value) if value else "—", S["bold9"])]
+        return [
+            Paragraph(label, S["mono"]),
+            Paragraph(str(value) if value else "—", S["bold9"]),
+        ]
 
-    prospect_rows = [
-        _prow("COMPANY",  P.get("company","")),
-        _prow("CONTACT",  P.get("contact","")),
-        _prow("TITLE",    P.get("title","")),
-        _prow("EMAIL",    P.get("email","")),
-        _prow("PHONE",    P.get("phone","")),
-        _prow("STAGE",    P.get("stage","")),
-        _prow("MEETING",  P.get("meeting","")),
-        _prow("ANGLE",    angle_desc[:50]),
+    fields = [
+        ("COMPANY",  P.get("company","")),
+        ("CONTACT",  P.get("contact","")),
+        ("JOB TITLE",P.get("title","")),
+        ("EMAIL",    P.get("email","")),
+        ("PHONE",    P.get("phone","")),
+        ("STAGE",    P.get("stage","")),
+        ("MEETING",  P.get("meeting","")),
+        ("ANGLE",    ANGLE_TITLES.get(angle,"")),
     ]
-    # Split into 2 columns
-    half = len(prospect_rows) // 2
-    left_rows  = prospect_rows[:half]
-    right_rows = prospect_rows[half:]
-    col_w = (CW - 6*mm) / 2
-    for lr, rr in zip(left_rows, right_rows):
-        t = Table([lr + [""] + rr], colWidths=[22*mm, col_w-25*mm, 3*mm, 22*mm, col_w-25*mm])
-        t.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-            ("LINEBELOW",(0,0),(-1,-1),0.2,DIM),
-            ("TOPPADDING",(0,0),(-1,-1),4),
-            ("BOTTOMPADDING",(0,0),(-1,-1),4),
-            ("LEFTPADDING",(0,0),(-1,-1),6),
+    half   = len(fields) // 2
+    lw     = (CW - 6*mm) / 2
+    for i in range(half):
+        l = fields[i]
+        r_f = fields[i + half] if i + half < len(fields) else ("","")
+        row = Table(
+            [_prow(l[0], l[1]) + [""] + _prow(r_f[0], r_f[1])],
+            colWidths=[24*mm, lw-27*mm, 6*mm, 24*mm, lw-27*mm]
+        )
+        row.setStyle(TableStyle([
+            ("LINEBELOW",     (0,0),(-1,-1), 0.3, MGREY),
+            ("TOPPADDING",    (0,0),(-1,-1), 4),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+            ("LEFTPADDING",   (0,0),(-1,-1), 4),
+            ("BACKGROUND",    (0,0),(-1,-1), WHITE),
         ]))
-        story.append(t)
-    story.append(Spacer(1, 4*mm))
+        story.append(row)
+
+    story.append(Spacer(1, 5*mm))
 
     # WiredScore status
     ws_status = ws.get("status","unconfirmed")
-    ws_col = GREEN if ws_status=="certified" else RED if ws_status=="not-certified" else AMBER
-    ws_text = (
-        f"CERTIFIED — {ws.get('scheme','')} {ws.get('level','')}  ·  Verified {ws.get('verifiedAt','')} by {ws.get('verifiedBy','')}"
+    ws_col    = GREEN if ws_status=="certified" else RED if ws_status=="not-certified" else TEAL
+    ws_label  = (
+        f"CERTIFIED — {ws.get('scheme','')} {ws.get('level','')}  "
+        f"(verified {ws.get('verifiedAt','')} by {ws.get('verifiedBy','')})"
         if ws_status == "certified" else
         "NOT CERTIFIED — WiredScore AP Services conversation applicable"
         if ws_status == "not-certified" else
-        "UNCONFIRMED — Manual verification required via wiredscore.com/certified-buildings"
+        "STATUS UNCONFIRMED — verify at wiredscore.com/certified-buildings"
     )
     ws_table = Table(
-        [[Paragraph("WIREDSCORE / SMARTSCORE", S["mono9t"]),
-          Paragraph(ws_text, ParagraphStyle("ws", fontName="Helvetica-Bold", fontSize=8, textColor=ws_col, leading=11))]],
-        colWidths=[42*mm, CW-42*mm]
+        [[
+            Paragraph("WIREDSCORE / SMARTSCORE", S["mono_b"]),
+            Paragraph(ws_label, ParagraphStyle(
+                "wsl", fontName="Helvetica-Bold", fontSize=9,
+                textColor=ws_col, leading=12
+            )),
+        ]],
+        colWidths=[44*mm, CW-44*mm]
     )
     ws_table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-        ("LINEBELOW",(0,0),(-1,-1),0.5,ws_col),
-        ("TOPPADDING",(0,0),(-1,-1),6),
-        ("BOTTOMPADDING",(0,0),(-1,-1),6),
-        ("LEFTPADDING",(0,0),(-1,-1),8),
+        ("BACKGROUND",    (0,0),(-1,-1), LGREY),
+        ("BOX",           (0,0),(-1,-1), 0.5, ws_col),
+        ("LINEBELOW",     (0,0),(-1,-1), 2,   ws_col),
+        ("TOPPADDING",    (0,0),(-1,-1), 7),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+        ("LEFTPADDING",   (0,0),(-1,-1), 8),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
     ]))
     story.append(ws_table)
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 4*mm))
 
     # Internal notes
     if P.get("notes"):
         notes_t = Table(
-            [[Paragraph("INTERNAL NOTES", S["mono9a"]),
-              Paragraph(P["notes"][:300], S["body"])]],
+            [[
+                Paragraph("INTERNAL NOTES", S["mono_b"]),
+                Paragraph(P["notes"][:400], S["body"]),
+            ]],
             colWidths=[28*mm, CW-28*mm]
         )
         notes_t.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-            ("LINEBELOW",(0,0),(-1,-1),0.5,AMBER),
-            ("TOPPADDING",(0,0),(-1,-1),6),
-            ("BOTTOMPADDING",(0,0),(-1,-1),6),
-            ("LEFTPADDING",(0,0),(-1,-1),8),
+            ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#fffbeb")),
+            ("BOX",           (0,0),(-1,-1), 0.5, AMBER),
+            ("LINEBELOW",     (0,0),(-1,-1), 2,   AMBER),
+            ("TOPPADDING",    (0,0),(-1,-1), 7),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+            ("LEFTPADDING",   (0,0),(-1,-1), 8),
+            ("VALIGN",        (0,0),(-1,-1), "TOP"),
         ]))
         story.append(notes_t)
 
     story.append(PageBreak())
 
-    # ── PAGE 2: DATA OVERVIEW ─────────────────────────────────────────────────
-    story.append(_header_bar("DATA OVERVIEW", S))
+    # ══════════════════════════════════════════════════════════════
+    # PAGE 2 — DATA OVERVIEW & TALKING POINTS
+    # ══════════════════════════════════════════════════════════════
+    story.append(_section_header("DATA OVERVIEW", S))
     story.append(Spacer(1, 4*mm))
 
     metrics = report.get("metrics", {})
-    metric_labels = {
-        "connectivity": "Connectivity",
-        "epc":          "Energy / EPC",
-        "occupiers":    "Occupier Profile",
-        "flood":        "Flood Risk",
-        "mobile":       "Mobile Indoor",
-        "crime":        "Crime Profile",
+    METRIC_LABELS = {
+        "connectivity":"Connectivity","epc":"Energy / EPC",
+        "occupiers":"Occupier Profile","flood":"Flood Risk",
+        "mobile":"Mobile Indoor","crime":"Crime Profile",
     }
-    metric_rows = []
+    STATUS_COLS = {"good": GREEN, "warn": AMBER, "bad": RED}
+
     items = list(metrics.items())
-    for i in range(0, len(items), 3):
-        chunk = items[i:i+3]
-        row = []
+    mw    = (CW - 4*mm) / 3
+
+    for row_start in range(0, len(items), 3):
+        chunk = items[row_start:row_start+3]
+        cells = []
         for k, v in chunk:
-            lc = GREEN if v.get("status")=="good" else AMBER if v.get("status")=="warn" else RED
+            lc     = STATUS_COLS.get(v.get("status",""), GREY)
+            status_text = {"good":"✓ Good","warn":"⚠ Advisory","bad":"✗ Attention"}.get(v.get("status",""),"")
             cell = [
-                Paragraph(metric_labels.get(k, k).upper(), S["mono9"]),
-                Paragraph(f'<font color="{lc.hexval()}">{v.get("value","—")}</font>',
-                          ParagraphStyle("mv", fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=WHITE)),
+                Paragraph(METRIC_LABELS.get(k,k).upper(), S["mono"]),
+                Paragraph(
+                    f'<font color="{lc.hexval()}"><b>{v.get("value","—")}</b></font>',
+                    ParagraphStyle("mv2", fontName="Helvetica-Bold",
+                                   fontSize=14, leading=18, textColor=BLACK)
+                ),
                 Paragraph(v.get("detail","").replace("\n","  ·  "), S["small"]),
+                Spacer(1, 2*mm),
+                Paragraph(
+                    f'<font color="{lc.hexval()}">{status_text}</font>',
+                    S["small"]
+                ),
             ]
-            row.append(cell)
-        while len(row) < 3:
-            row.append([""])
-        mw = CW / 3 - 1*mm
-        t = Table([row], colWidths=[mw, mw, mw])
+            cells.append(cell)
+        while len(cells) < 3:
+            cells.append([""])
+
+        t = Table([cells], colWidths=[mw, mw, mw])
         t.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-            ("VALIGN",(0,0),(-1,-1),"TOP"),
-            ("TOPPADDING",(0,0),(-1,-1),7),
-            ("BOTTOMPADDING",(0,0),(-1,-1),7),
-            ("LEFTPADDING",(0,0),(-1,-1),7),
-            ("GRID",(0,0),(-1,-1),0.3,DIM),
-        ]))
-        metric_rows.append(t)
-        metric_rows.append(Spacer(1, 2*mm))
-
-    story.extend(metric_rows)
-    story.append(Spacer(1, 5*mm))
-
-    # Talking points
-    from scoring import WEIGHTS
-    angle_copy = {
-        "owner": {
-            "title": "SALES ANGLE — Building Owner",
-            "points": [
-                'Asset value: "Buildings with 1Gbps and WiredScore certification achieve 4.9% higher valuations."',
-                'Regulatory exposure: "EPC compliance risk is a direct threat to lettability under proposed 2027 legislation."',
-                'Occupier retention: "19.4% lower tenant churn where buildings have managed digital infrastructure."',
-                'WiredScore: "Modern Networks are WiredScore Accredited Professionals. Most buildings certify within 60 days."',
-            ]
-        },
-        "agent": {
-            "title": "SALES ANGLE — Managing Agent",
-            "points": [
-                'Tenant complaints: "Connectivity and mobile signal are the top two complaint categories in multi-tenant buildings."',
-                'Day-one connectivity: "Zero onboarding delays when MN provides day-one managed connectivity."',
-                'Portfolio WiredScore: "We work with CBRE, JLL, Savills and C&W — portfolio certification at scale."',
-                'Single managed service: "One contract, one invoice, one point of contact across all managed buildings."',
-            ]
-        },
-        "management": {
-            "title": "SALES ANGLE — Building Management",
-            "points": [
-                'Insurance compliance: "Insurers require demonstrable cybersecurity controls. We provide the managed firewall needed."',
-                'Regulatory compliance: "ISO 27001 and GDPR obligations met via single managed service with regular audits."',
-                'Operational resilience: "Resilient managed connectivity with geographic redundancy keeps building systems online."',
-                'Single point of accountability: "One managed services partner for network, security, and cloud across 2,000+ UK properties."',
-            ]
-        },
-    }
-    ac = angle_copy.get(angle, angle_copy["owner"])
-    story.append(_header_bar(ac["title"], S))
-    story.append(Spacer(1, 3*mm))
-    for pt in ac["points"]:
-        row = Table([[Paragraph("→", S["mono9t"]), Paragraph(pt, S["body"])]], colWidths=[6*mm, CW-6*mm])
-        row.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-            ("VALIGN",(0,0),(-1,-1),"TOP"),
-            ("TOPPADDING",(0,0),(-1,-1),5),
-            ("BOTTOMPADDING",(0,0),(-1,-1),5),
-            ("LEFTPADDING",(0,0),(-1,-1),6),
-            ("LINEBELOW",(0,0),(-1,-1),0.2,DIM),
-        ]))
-        story.append(row)
-    story.append(PageBreak())
-
-    # ── PAGE 3: GAPS ──────────────────────────────────────────────────────────
-    story.append(_header_bar("GAPS & SERVICE OPPORTUNITIES", S))
-    story.append(Spacer(1, 4*mm))
-
-    gaps = report.get("gaps", [])
-    for g in gaps:
-        lc = _sev_colour(g["sev"])
-        sev_label = g["sev"].upper()
-        gap_rows = [
-            [Paragraph(sev_label, ParagraphStyle("sl", fontName="Courier", fontSize=7,
-                        textColor=lc, leading=10)),
-             Paragraph(f'{g["icon"]} {g["title"]}', S["bold10"]),
-             Paragraph("MN SERVICE", S["mono9t"]),
-             Paragraph(g["service"].replace("\n"," · "), S["bold9"])],
-            ["",
-             Paragraph(g["desc"], S["body"]),
-             "",
-             Paragraph(g["detail"], S["small"])],
-            ["",
-             Paragraph(f'src: {g["source"]}', S["mono9"]),
-             "", ""],
-        ]
-        t = Table(gap_rows, colWidths=[14*mm, CW-14*mm-52*mm, 18*mm, 34*mm])
-        t.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-            ("LINEBEFOREE",(0,0),(0,-1),3,lc),  # left accent
-            ("VALIGN",(0,0),(-1,-1),"TOP"),
-            ("TOPPADDING",(0,0),(-1,-1),5),
-            ("BOTTOMPADDING",(0,0),(-1,-1),5),
-            ("LEFTPADDING",(0,0),(-1,-1),6),
-            ("LINEBELOW",(0,-1),(-1,-1),0.3,DIM),
-            ("SPAN",(0,1),(0,2)),
-            ("SPAN",(2,1),(3,2)),
+            ("BACKGROUND",    (0,0),(-1,-1), WHITE),
+            ("BOX",           (0,0),(-1,-1), 0.5, MGREY),
+            ("LINEBEFORE",    (1,0),(2,-1),  0.5, MGREY),
+            ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ("TOPPADDING",    (0,0),(-1,-1), 8),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 8),
+            ("LEFTPADDING",   (0,0),(-1,-1), 8),
         ]))
         story.append(t)
-        story.append(Spacer(1, 2*mm))
+        story.append(Spacer(1, 3*mm))
+
+    story.append(Spacer(1, 4*mm))
+    story.append(_section_header(f"SALES TALKING POINTS — {ANGLE_TITLES.get(angle,'').upper()}", S))
+    story.append(Spacer(1, 4*mm))
+
+    for pt in TALKING_POINTS.get(angle, TALKING_POINTS["owner"]):
+        row = Table(
+            [[Paragraph("→", S["teal"]), Paragraph(pt, S["body"])]],
+            colWidths=[8*mm, CW-8*mm]
+        )
+        row.setStyle(TableStyle([
+            ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ("TOPPADDING",    (0,0),(-1,-1), 5),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+            ("LEFTPADDING",   (0,0),(-1,-1), 4),
+            ("LINEBELOW",     (0,0),(-1,-1), 0.3, MGREY),
+            ("BACKGROUND",    (0,0),(-1,-1), WHITE),
+        ]))
+        story.append(row)
 
     story.append(PageBreak())
 
-    # ── PAGE 4: STRENGTHS + ACTIONS ───────────────────────────────────────────
-    story.append(_header_bar("CONFIRMED STRENGTHS", S))
+    # ══════════════════════════════════════════════════════════════
+    # PAGE 3 — GAPS & OPPORTUNITIES
+    # ══════════════════════════════════════════════════════════════
+    story.append(_section_header("GAPS & OPPORTUNITIES", S))
+    story.append(Spacer(1, 3*mm))
+
+    gaps = report.get("gaps", [])
+    crit_count = sum(1 for g in gaps if g["sev"]=="critical")
+    adv_count  = sum(1 for g in gaps if g["sev"]=="advisory")
+    uncon_count= sum(1 for g in gaps if g["sev"]=="unconfirmed")
+    story.append(Paragraph(
+        f"{crit_count} critical  ·  {adv_count} advisory  ·  {uncon_count} unconfirmed  "
+        f"·  Each gap maps to a Modern Networks service",
+        S["small"]
+    ))
+    story.append(Spacer(1, 4*mm))
+
+    for g in gaps:
+        lc        = _sev_colour(g["sev"])
+        sev_label = g["sev"].upper()
+        bg_col    = (
+            colors.HexColor("#fff5f5") if g["sev"]=="critical" else
+            colors.HexColor("#fffbeb") if g["sev"]=="advisory" else
+            colors.HexColor("#f0f9ff")
+        )
+
+        gap_content = [
+            Table(
+                [[
+                    Paragraph(sev_label, ParagraphStyle(
+                        "sl2", fontName="Courier-Bold", fontSize=7.5,
+                        textColor=lc, leading=10
+                    )),
+                    Paragraph(f"{g['icon']}  {g['title']}", S["bold10"]),
+                ]],
+                colWidths=[18*mm, CW - 18*mm - 52*mm]
+            ),
+            Spacer(1, 2*mm),
+            Paragraph(g["desc"], S["body"]),
+            Spacer(1, 2*mm),
+            Paragraph(f"Source: {g['source']}", S["mono"]),
+        ]
+
+        service_box = Table(
+            [
+                [Paragraph("MODERN NETWORKS SERVICE", S["mono_b"])],
+                [Paragraph(g["service"].replace("\n", "\n"), S["bold9"])],
+                [Spacer(1, 1*mm)],
+                [Paragraph(g["detail"], S["small"])],
+            ],
+            colWidths=[50*mm]
+        )
+        service_box.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(-1,-1), LGREY),
+            ("BOX",           (0,0),(-1,-1), 0.5, lc),
+            ("TOPPADDING",    (0,0),(-1,-1), 5),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+            ("LEFTPADDING",   (0,0),(-1,-1), 7),
+        ]))
+
+        gap_row = Table(
+            [[gap_content, service_box]],
+            colWidths=[CW - 54*mm, 54*mm]
+        )
+        gap_row.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(0,-1), bg_col),
+            ("LINEBEFORE",    (0,0),(0,-1), 3,   lc),
+            ("BOX",           (0,0),(-1,-1), 0.5, MGREY),
+            ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ("TOPPADDING",    (0,0),(0,-1), 8),
+            ("BOTTOMPADDING", (0,0),(0,-1), 8),
+            ("LEFTPADDING",   (0,0),(0,-1), 10),
+        ]))
+        story.append(KeepTogether([gap_row, Spacer(1, 4*mm)]))
+
+    story.append(PageBreak())
+
+    # ══════════════════════════════════════════════════════════════
+    # PAGE 4 — STRENGTHS & NEXT STEPS
+    # ══════════════════════════════════════════════════════════════
+    story.append(_section_header("CONFIRMED STRENGTHS", S))
     story.append(Spacer(1, 4*mm))
 
     positives = report.get("positives", [])
-    for p in positives:
-        t = Table(
-            [[Paragraph(p["icon"], S["bold10"]),
-              [Paragraph(p["title"], S["bold9"]),
-               Paragraph(p["desc"], S["body"])]]],
-            colWidths=[10*mm, CW-10*mm]
-        )
-        t.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-            ("LINEBEFORE",(0,0),(0,-1),2,GREEN),
-            ("VALIGN",(0,0),(-1,-1),"TOP"),
-            ("TOPPADDING",(0,0),(-1,-1),5),
-            ("BOTTOMPADDING",(0,0),(-1,-1),5),
-            ("LEFTPADDING",(0,0),(-1,-1),7),
-            ("LINEBELOW",(0,0),(-1,-1),0.2,DIM),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 2*mm))
+    if ws.get("status") == "certified":
+        positives = [{
+            "icon":  "🏆",
+            "title": f"{ws.get('scheme','WiredScore')} {ws.get('level','Certified')} Certified",
+            "desc":  f"Manually verified {ws.get('verifiedAt','')} by {ws.get('verifiedBy','')}. "
+                     "Differentiating asset credential — lead with this in owner and agent conversations.",
+        }] + positives
 
+    pos_rows = []
+    for p in positives:
+        row = Table(
+            [[
+                Paragraph(p["icon"], S["bold10"]),
+                [
+                    Paragraph(p["title"], S["bold9"]),
+                    Paragraph(p["desc"],  S["body"]),
+                ],
+            ]],
+            colWidths=[12*mm, CW-12*mm]
+        )
+        row.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#f0fdf4")),
+            ("LINEBEFORE",    (0,0),(0,-1),  3, GREEN),
+            ("BOX",           (0,0),(-1,-1), 0.5, colors.HexColor("#86efac")),
+            ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ("TOPPADDING",    (0,0),(-1,-1), 7),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+            ("LEFTPADDING",   (0,0),(-1,-1), 8),
+        ]))
+        pos_rows.append(row)
+        pos_rows.append(Spacer(1, 3*mm))
+
+    story.extend(pos_rows)
     story.append(Spacer(1, 5*mm))
-    story.append(_header_bar("RECOMMENDED NEXT STEPS", S))
-    story.append(Spacer(1, 3*mm))
+
+    # Next steps
+    story.append(_section_header("RECOMMENDED NEXT STEPS", S))
+    story.append(Spacer(1, 4*mm))
 
     steps = [
-        "Progress WiredScore / SmartScore certification conversation — MN are Accredited Professionals.",
+        "Progress WiredScore / SmartScore certification — Modern Networks are Accredited Professionals.",
         "Request a site survey to assess connectivity infrastructure and identify upgrade options.",
-        "Present Modern Networks managed services proposal aligned to gaps identified in this briefing.",
-        "Follow up on EPC compliance timeline with building owner — 2027 minimum C regulations.",
+        "Present a Modern Networks managed services proposal aligned to the gaps in this briefing.",
+        "Follow up on EPC compliance timeline with the building owner — 2027 minimum C regulations.",
         "Review cybersecurity and insurance compliance posture across the building.",
     ]
     for i, step in enumerate(steps, 1):
-        t = Table([[Paragraph(str(i), S["h_teal"]),
-                    Paragraph(step, S["body"])]],
-                  colWidths=[8*mm, CW-8*mm])
-        t.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-            ("TOPPADDING",(0,0),(-1,-1),6),
-            ("BOTTOMPADDING",(0,0),(-1,-1),6),
-            ("LEFTPADDING",(0,0),(-1,-1),8),
-            ("LINEBELOW",(0,0),(-1,-1),0.2,DIM),
+        row = Table(
+            [[Paragraph(str(i), S["teal"]), Paragraph(step, S["body"])]],
+            colWidths=[8*mm, CW-8*mm]
+        )
+        row.setStyle(TableStyle([
+            ("LINEBELOW",     (0,0),(-1,-1), 0.3, MGREY),
+            ("TOPPADDING",    (0,0),(-1,-1), 6),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 6),
+            ("LEFTPADDING",   (0,0),(-1,-1), 4),
+            ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
         ]))
-        story.append(t)
+        story.append(row)
 
-    story.append(Spacer(1, 5*mm))
+    story.append(Spacer(1, 6*mm))
+
+    # Footer branding block
     footer_t = Table(
-        [[Paragraph("Modern Networks  ·  modern-networks.co.uk  ·  WiredScore & SmartScore Accredited Professionals  ·  2,000+ UK properties", S["small"]),
-          Paragraph("CONFIDENTIAL — INTERNAL USE ONLY", S["mono9"])]],
-        colWidths=[CW * 0.7, CW * 0.3]
+        [[
+            Paragraph(
+                "Modern Networks  ·  modern-networks.co.uk  ·  "
+                "WiredScore & SmartScore Accredited Professionals  ·  2,000+ UK properties",
+                S["small"]
+            ),
+            Paragraph("CONFIDENTIAL — INTERNAL USE ONLY", S["mono"]),
+        ]],
+        colWidths=[CW * 0.65, CW * 0.35]
     )
     footer_t.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),NAVY_LITE),
-        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
-        ("LEFTPADDING",(0,0),(-1,-1),8),("ALIGN",(1,0),(1,0),"RIGHT"),
+        ("BACKGROUND",    (0,0),(-1,-1), LGREY),
+        ("BOX",           (0,0),(-1,-1), 0.5, MGREY),
+        ("TOPPADDING",    (0,0),(-1,-1), 7),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+        ("LEFTPADDING",   (0,0),(-1,-1), 8),
+        ("ALIGN",         (1,0),(1,0),   "RIGHT"),
+        ("RIGHTPADDING",  (1,0),(1,0),   8),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
     ]))
     story.append(footer_t)
 
     def _footer(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 6)
-        canvas.setFillColor(DIM)
-        canvas.drawCentredString(
-            W / 2, 8*mm,
-            f"Page {doc.page}  ·  MN Internal Briefing  ·  {postcode_str}  ·  CONFIDENTIAL"
-        )
-        canvas.restoreState()
+        _footer_cb(canvas, doc, pc, f"{ANGLE_TITLES.get(angle,'')} Briefing")
 
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return buf.getvalue()
 
 
 def generate_portfolio_pdf(reports: list, client_name: str, staff: str) -> bytes:
-    """Generate a multi-property portfolio intelligence summary PDF."""
+    """Clean portfolio summary PDF."""
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=M, rightMargin=M, topMargin=M, bottomMargin=14*mm)
     S   = _styles()
-    story = []
-    CW  = W - 2*M
-    sorted_r = sorted(reports, key=lambda r: r.get("score", 0))
-    avg_score = round(sum(r.get("score",0) for r in sorted_r) / len(sorted_r)) if sorted_r else 0
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=M, rightMargin=M,
+        topMargin=M, bottomMargin=20*mm,
+    )
+    story  = []
+    sorted_r   = sorted(reports, key=lambda r: r.get("score", 0))
+    avg_score  = round(sum(r.get("score",0) for r in sorted_r) / len(sorted_r)) if sorted_r else 0
     total_gaps = sum(len(r.get("gaps",[])) for r in sorted_r)
 
     # Cover
-    story.append(Paragraph("INTERNAL — MODERN NETWORKS SALES INTELLIGENCE", S["mono9t"]))
-    story.append(HRFlowable(width=CW, color=TEAL, thickness=1))
-    story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("Modern Networks  |  Portfolio Intelligence Report", S["h_teal"]))
-    story.append(Paragraph(f"Prepared by: {staff}  ·  {datetime.now().strftime('%d %b %Y')}", S["mono9"]))
-    story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(client_name or "Portfolio Assessment", S["bold18"]))
-    story.append(Paragraph(f"{len(sorted_r)} properties assessed", S["body"]))
+    story.append(Paragraph("INTERNAL  ·  MODERN NETWORKS PORTFOLIO BRIEFING", S["mono_b"]))
+    story.append(HRFlowable(width=CW, thickness=1, color=NAVY, spaceAfter=8))
+    story.append(Paragraph(f"Modern Networks  |  Portfolio Intelligence", S["teal"]))
+    story.append(Paragraph(
+        f"Prepared by: {staff}  ·  {datetime.now().strftime('%d %b %Y')}",
+        S["mono"]
+    ))
     story.append(Spacer(1, 6*mm))
+    story.append(Paragraph(client_name or "Portfolio Assessment", S["h1"]))
+    story.append(Spacer(1, 4*mm))
 
-    stats = [[str(len(sorted_r)), f"{avg_score}/100", str(total_gaps),
-              str(sum(1 for r in sorted_r if r.get("score",0)<60))],
-             ["Properties", "Avg Score", "Total Gaps", "Urgent (<60)"]]
-    st_t = Table([stats[0], stats[1]], colWidths=[CW/4]*4)
-    st_t.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-        ("TEXTCOLOR",(0,0),(-1,0),TEAL.hexval()),
-        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
-        ("FONTSIZE",(0,0),(-1,0),18),
-        ("FONTNAME",(0,1),(-1,1),"Helvetica"),
-        ("FONTSIZE",(0,1),(-1,1),8),
-        ("TEXTCOLOR",(0,1),(-1,1),MUTED.hexval()),
-        ("ALIGN",(0,0),(-1,-1),"LEFT"),
-        ("TOPPADDING",(0,0),(-1,-1),8),
-        ("BOTTOMPADDING",(0,0),(-1,-1),8),
-        ("LEFTPADDING",(0,0),(-1,-1),10),
+    # Summary stats
+    stats_row = Table(
+        [[
+            [Paragraph(str(len(sorted_r)), ParagraphStyle("sn",fontName="Helvetica-Bold",fontSize=24,textColor=NAVY,leading=28)),
+             Paragraph("Properties", S["small"])],
+            [Paragraph(f"{avg_score}/100", ParagraphStyle("sn2",fontName="Helvetica-Bold",fontSize=24,textColor=_score_colour(avg_score),leading=28)),
+             Paragraph("Average Score", S["small"])],
+            [Paragraph(str(total_gaps), ParagraphStyle("sn3",fontName="Helvetica-Bold",fontSize=24,textColor=AMBER,leading=28)),
+             Paragraph("Total Gaps", S["small"])],
+            [Paragraph(str(sum(1 for r in sorted_r if r.get("score",0)<60)),
+                       ParagraphStyle("sn4",fontName="Helvetica-Bold",fontSize=24,textColor=RED,leading=28)),
+             Paragraph("Urgent (<60)", S["small"])],
+        ]],
+        colWidths=[CW/4]*4
+    )
+    stats_row.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),(-1,-1), LGREY),
+        ("BOX",           (0,0),(-1,-1), 0.5, MGREY),
+        ("VALIGN",        (0,0),(-1,-1), "TOP"),
+        ("TOPPADDING",    (0,0),(-1,-1), 10),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 10),
+        ("LEFTPADDING",   (0,0),(-1,-1), 10),
+        ("LINEBEFORE",    (1,0),(3,-1),  0.5, MGREY),
     ]))
-    story.append(st_t)
+    story.append(stats_row)
     story.append(PageBreak())
 
-    # Ranked summary table
-    story.append(_header_bar("PORTFOLIO RANKING — PRIORITY ORDER (LOWEST SCORE FIRST)", S))
-    story.append(Spacer(1, 3*mm))
-    hdr = [Paragraph(h, S["mono9t"]) for h in ["#","POSTCODE","SCORE","CRITICAL","TOP GAP","MN SERVICE"]]
+    # Ranked table
+    story.append(_section_header("PORTFOLIO RANKING — LOWEST SCORE FIRST", S))
+    story.append(Spacer(1, 4*mm))
+
+    hdr = [Paragraph(h, S["mono_b"]) for h in
+           ["#","POSTCODE","SCORE","CRITICAL","TOP PRIORITY GAP","MN SERVICE"]]
     table_rows = [hdr]
-    cws = [8*mm, 24*mm, 16*mm, 16*mm, CW-100*mm, 36*mm]
+    cws = [8*mm, 24*mm, 18*mm, 16*mm, CW-102*mm, 36*mm]
+
     for i, r in enumerate(sorted_r, 1):
-        sc = _score_colour(r.get("score",0))
+        sc   = _score_colour(r.get("score",0))
         crit = sum(1 for g in r.get("gaps",[]) if g.get("sev")=="critical")
-        tg = r.get("gaps",[{}])[0]
+        tg   = r.get("gaps",[{}])[0]
         table_rows.append([
-            Paragraph(str(i), S["h_teal"]),
+            Paragraph(str(i), S["bold9"]),
             Paragraph(r.get("postcode",""), S["bold9"]),
-            Paragraph(f'<font color="{sc.hexval()}">{r.get("score",0)}</font>',
-                      ParagraphStyle("sc2",fontName="Helvetica-Bold",fontSize=13,leading=16,textColor=WHITE)),
-            Paragraph(f'<font color="{RED.hexval()}">{crit}</font>', S["bold9"]),
-            Paragraph(f'{tg.get("icon","")} {tg.get("title","—")[:50]}', S["body"]),
-            Paragraph(tg.get("service","—").split("\n")[0][:28], S["small"]),
+            Paragraph(
+                f'<font color="{sc.hexval()}"><b>{r.get("score",0)}</b></font>',
+                ParagraphStyle("sc3",fontName="Helvetica-Bold",fontSize=13,leading=16,textColor=BLACK)
+            ),
+            Paragraph(
+                f'<font color="{RED.hexval()}"><b>{crit}</b></font>',
+                S["bold9"]
+            ),
+            Paragraph(f'{tg.get("icon","")} {tg.get("title","—")[:48]}', S["small"]),
+            Paragraph(tg.get("service","—").split("\n")[0][:26], S["small"]),
         ])
+
     t = Table(table_rows, colWidths=cws)
     t.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-        ("BACKGROUND",(0,0),(-1,0),NAVY_LITE),
-        ("LINEBELOW",(0,0),(-1,-1),0.3,DIM),
-        ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
-        ("LEFTPADDING",(0,0),(-1,-1),5),("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("BACKGROUND",    (0,0),(-1,0),  NAVY),
+        ("TEXTCOLOR",     (0,0),(-1,0),  WHITE),
+        ("BACKGROUND",    (0,1),(-1,-1), WHITE),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1), [WHITE, LGREY]),
+        ("LINEBELOW",     (0,0),(-1,-1), 0.3, MGREY),
+        ("TOPPADDING",    (0,0),(-1,-1), 5),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+        ("LEFTPADDING",   (0,0),(-1,-1), 5),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
     ]))
     story.append(t)
     story.append(PageBreak())
 
-    # Individual property summaries
+    # Individual summaries
     for r in sorted_r:
-        sc = _score_colour(r.get("score",0))
+        sc   = _score_colour(r.get("score",0))
+        crit = sum(1 for g in r.get("gaps",[]) if g["sev"]=="critical")
+        adv  = sum(1 for g in r.get("gaps",[]) if g["sev"]=="advisory")
+
         story.append(Paragraph(
-            f'<font color="{TEAL.hexval()}">{r.get("postcode","")}</font>  —  '
-            f'<font color="{sc.hexval()}">{r.get("score",0)}/100  {r.get("scoreLabel","")}</font>',
-            S["bold12"]
+            f'{r.get("postcode","")}  —  '
+            f'<font color="{sc.hexval()}"><b>{r.get("score",0)}/100  {r.get("scoreLabel","")}</b></font>',
+            S["h2"]
         ))
-        story.append(Spacer(1, 2*mm))
-        for g in r.get("gaps", [])[:4]:
-            lc = _sev_colour(g["sev"])
-            t = Table([[Paragraph(g["sev"].upper(), ParagraphStyle("sl2",fontName="Courier",
-                                 fontSize=6,textColor=lc,leading=9)),
-                        Paragraph(f'{g["icon"]} {g["title"]}', S["bold9"]),
-                        Paragraph(g["service"].split("\n")[0], S["small"])]],
-                      colWidths=[12*mm, CW-52*mm, 40*mm])
-            t.setStyle(TableStyle([
-                ("BACKGROUND",(0,0),(-1,-1),NAVY_MID),
-                ("LINEBEFORE",(0,0),(0,-1),2,lc),
-                ("LINEBELOW",(0,0),(-1,-1),0.2,DIM),
-                ("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4),
-                ("LEFTPADDING",(0,0),(-1,-1),6),("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        story.append(Paragraph(
+            f'{crit} critical gaps  ·  {adv} advisory  ·  Saved {r.get("savedAt","")}',
+            S["small"]
+        ))
+        story.append(Spacer(1, 3*mm))
+
+        for g in r.get("gaps",[])[:4]:
+            lc  = _sev_colour(g["sev"])
+            row = Table(
+                [[
+                    Paragraph(g["sev"].upper(), ParagraphStyle(
+                        "sl3", fontName="Courier-Bold", fontSize=7,
+                        textColor=lc, leading=10
+                    )),
+                    Paragraph(f'{g["icon"]} {g["title"]}', S["bold9"]),
+                    Paragraph(g["service"].split("\n")[0], S["teal"]),
+                ]],
+                colWidths=[16*mm, CW-60*mm, 44*mm]
+            )
+            row.setStyle(TableStyle([
+                ("LINEBEFORE",    (0,0),(0,-1), 3,   lc),
+                ("LINEBELOW",     (0,0),(-1,-1), 0.3, MGREY),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 6),
+                ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+                ("BACKGROUND",    (0,0),(-1,-1), WHITE),
             ]))
-            story.append(t)
-        story.append(Spacer(1, 4*mm))
-        story.append(HRFlowable(width=CW, thickness=0.3, color=DIM))
-        story.append(Spacer(1, 4*mm))
+            story.append(row)
+
+        story.append(Spacer(1, 5*mm))
+        story.append(_divider())
 
     def _pfooter(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 6)
-        canvas.setFillColor(DIM)
-        canvas.drawCentredString(W/2, 8*mm,
-            f"Page {doc.page}  ·  MN Portfolio Report  ·  {client_name}  ·  CONFIDENTIAL")
-        canvas.restoreState()
+        _footer_cb(canvas, doc, client_name or "Portfolio", "Portfolio Report")
 
     doc.build(story, onFirstPage=_pfooter, onLaterPages=_pfooter)
     return buf.getvalue()
 
 
 def generate_amalgamated_pdf(reports: list, staff: str) -> bytes:
-    """
-    Multi-site amalgamated briefing — executive summary + ranking +
-    gap frequency analysis + individual property summaries + next steps.
-    """
-    # Reuse portfolio PDF for now with amalgamated title
+    """Amalgamated multi-site briefing PDF."""
     return generate_portfolio_pdf(reports, "Multi-Site Amalgamated Briefing", staff)
