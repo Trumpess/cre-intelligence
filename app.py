@@ -12,7 +12,7 @@ from api.ofcom           import get_connectivity_data
 from api.uprn            import get_uprn
 from api.epc             import get_epc_data
 from api.companies_house import get_occupier_data
-from api.flood_risk      import get_flood_risk
+from api.flood_risk      import get_flood_risk, get_flood_risk_by_postcode
 from api.police          import get_crime_data
 from scoring             import calculate_score, generate_gaps, generate_positives
 from pdf_export          import generate_briefing_pdf, generate_portfolio_pdf, generate_amalgamated_pdf
@@ -203,7 +203,7 @@ with tab1:
 
             if lat and lon:
                 st.write("🌊 Environment Agency — flood risk…")
-                flood = get_flood_risk(lat, lon)
+                flood = get_flood_risk_by_postcode(postcode_input)
                 st.write("🔒 Police API — crime profile…")
                 crime = get_crime_data(lat, lon)
                 st.write("🔑 UPRN lookup…")
@@ -573,7 +573,7 @@ with tab2:
             ofcom  = get_connectivity_data(pc)
             epc    = get_epc_data(pc)
             ch     = get_occupier_data(pc)
-            flood  = get_flood_risk(lat, lon) if lat else {"zone":"Unknown","zone_num":1,"flood_score":50,"risk_label":"Unknown","summary":"N/A","error":"No coords"}
+            flood  = get_flood_risk_by_postcode(pc)
             crime  = get_crime_data(lat, lon)  if lat else {"crime_score":60,"risk_label":"Unknown","summary":"N/A","total_crimes":0,"top_categories":[],"period":"","error":"No coords"}
             uprn   = get_uprn(lat, lon)        if lat else {"uprn":"N/A"}
             score, score_label, score_colour = calculate_score(ofcom, epc, ch, flood, crime)
