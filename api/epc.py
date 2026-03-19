@@ -1,6 +1,7 @@
 """
 api/epc.py
-Get Energy Performance Data API (new MHCLG service)
+Get Energy Performance Data API — new MHCLG service
+https://api.get-energy-performance-data.communities.gov.uk
 Authentication: Bearer token via GOV.UK One Login
 """
 
@@ -8,7 +9,7 @@ import requests
 import streamlit as st
 from datetime import datetime
 
-BASE_URL = "https://epc.api.communities.gov.uk/api/v1/non-domestic/search"
+BASE_URL = "https://api.get-energy-performance-data.communities.gov.uk/api/non-domestic/search"
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -18,79 +19,65 @@ def get_epc_data(postcode: str) -> dict:
     try:
         resp = requests.get(
             BASE_URL,
-            params={"postcode": postcode.strip(), "size": 5},
+            params={"postcode": postcode.strip()},
             headers={
-                "Accept": "application/json",
+                "Accept":        "application/json",
                 "Authorization": f"Bearer {token}",
             },
-            timeout=10,
+            timeout=15,
         )
         resp.raise_for_status()
         data = resp.json()
-        rows = data.get("rows", [])
+        rows = data.get("data", [])
 
         if not rows:
-            return _no_data("No EPC certificates found for this postcode")
+            return _no_data("No non-domestic EPC certificates found for this postcode")
 
+        # Sort by registration date descending — most recent first
         def _date(r):
-            d = r.get("lodgement-date") or r.get("lodgement_date") or ""
+            d = r.get("registrationDate", "")
             try:
-                return datetime.strptime(d, "%Y-%m-%d")
+                return datetime.fromisoformat(d.replace("Z", "+00:00"))
             except Exception:
                 return datetime.min
 
-        r = sorted(rows, key=_date, reverse=True)[0]
+        rows_sorted = sorted(rows, key=_date, reverse=True)
+        r = rows_sorted[0]
 
-        def _get(*keys, default=""):
-            for k in keys:
-                if k in r and r[k] not in (None, ""):
-                    return r[k]
-            return default
+        rating     = (r.get("currentEnergyEfficiencyBand") or "").upper()
+        address    = " ".join(filter(None, [
+            r.get("addressLine1",""),
+            r.get("addressLine2",""),
+            r.get("postTown",""),
+        ]))
+        reg_date   = r.get("registrationDate","")
+        cert_num   = r.get("certificateNumber","")
 
-        rating        = _get("current-energy-rating", "energy-rating-current", default="").upper()
-        score_raw     = _get("current-energy-efficiency", "energy-efficiency-current", default=0)
-        pot_rating    = _get("potential-energy-rating", "energy-rating-potential", default="").upper()
-        pot_score_raw = _get("potential-energy-efficiency", "energy-efficiency-potential", default=0)
-        address       = _get("address1", "address", "property-name")
-        lodged        = _get("lodgement-date", "lodgement_date")
-        expiry        = _get("nominated-date", "valid-until", default="")
+        # We don't get numeric score or expiry from this API
+        # so derive what we can from the band
+        score_map  = {"A":100,"B":90,"C":75,"D":50,"E":30,"F":15,"G":5}
+        epc_score  = score_map.get(rating, 50)
+        below_2027 = rating not in ("A","B","C") and rating != ""
 
-        try:
-            score     = int(score_raw)
-            pot_score = int(pot_score_raw)
-        except (TypeError, ValueError):
-            score = pot_score = 0
-
-        expires_soon = False
-        if expiry:
-            try:
-                days_left = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
-                expires_soon = days_left < 365
-            except Exception:
-                pass
-
-        below_2027 = rating not in ("A", "B", "C") and rating != ""
-        epc_score  = {"A":100,"B":90,"C":75,"D":50,"E":30,"F":15,"G":5}.get(rating, 50)
-        summary    = f"EPC {rating} (score {score})"
+        summary = f"EPC {rating}" if rating else "EPC rating unknown"
         if below_2027:
             summary += " — below proposed 2027 minimum (C)"
-        if expires_soon:
-            summary += " — certificate expires soon"
 
         return {
-            "rating": rating or "Unknown",
-            "score": score,
-            "potential_rating": pot_rating or "Unknown",
-            "potential_score": pot_score,
-            "expiry_date": expiry,
-            "expires_soon": expires_soon,
-            "below_2027": below_2027,
-            "address": address,
-            "lodged": lodged,
-            "cert_count": len(rows),
-            "epc_score": epc_score,
-            "summary": summary,
-            "error": None,
+            "rating":           rating or "Unknown",
+            "score":            epc_score,
+            "potential_rating": "",
+            "potential_score":  0,
+            "expiry_date":      "",
+            "expires_soon":     False,
+            "below_2027":       below_2027,
+            "address":          address,
+            "lodged":           reg_date[:10] if reg_date else "",
+            "cert_count":       len(rows),
+            "epc_score":        epc_score,
+            "summary":          summary,
+            "cert_number":      cert_num,
+            "error":            None,
         }
 
     except requests.exceptions.Timeout:
@@ -98,6 +85,8 @@ def get_epc_data(postcode: str) -> dict:
     except requests.exceptions.HTTPError as e:
         if e.response is not None and e.response.status_code == 401:
             return _no_data("EPC API: authentication failed — check Bearer token in secrets")
+        if e.response is not None and e.response.status_code == 404:
+            return _no_data("No EPC certificates found for this postcode")
         return _no_data(f"EPC API HTTP error: {e}")
     except requests.exceptions.RequestException as e:
         return _no_data(f"EPC API error: {e}")
@@ -106,9 +95,9 @@ def get_epc_data(postcode: str) -> dict:
 def _no_data(error: str) -> dict:
     return {
         "rating": "Unknown", "score": 0,
-        "potential_rating": "Unknown", "potential_score": 0,
+        "potential_rating": "", "potential_score": 0,
         "expiry_date": "", "expires_soon": False, "below_2027": False,
         "address": "", "lodged": "", "cert_count": 0,
         "epc_score": 50, "summary": "EPC data unavailable",
-        "error": error,
+        "cert_number": "", "error": error,
     }
