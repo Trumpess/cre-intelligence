@@ -10,47 +10,30 @@ from collections import Counter
 
 BASE_URL = "https://api.company-information.service.gov.uk/advanced-search/companies"
 
-# SIC code categories relevant to commercial property occupier intelligence
 SIC_CATEGORIES = {
-    "Finance / Insurance":   list(range(64000, 67000)),
-    "Professional Services": list(range(69000, 75000)),
-    "Technology / IT":       list(range(58000, 64000)) + list(range(95000, 96000)),
-    "Life Sciences / R&D":   list(range(72000, 73000)) + list(range(86000, 87000)),
+    "Finance / Insurance":    list(range(64000, 67000)),
+    "Professional Services":  list(range(69000, 75000)),
+    "Technology / IT":        list(range(58000, 64000)) + list(range(95000, 96000)),
+    "Life Sciences / R&D":    list(range(72000, 73000)) + list(range(86000, 87000)),
     "Property / Real Estate": list(range(68000, 69000)),
-    "Retail / Consumer":     list(range(45000, 48000)) + list(range(56000, 57000)),
-    "Manufacturing":         list(range(10000, 34000)),
-    "Construction":          list(range(41000, 44000)),
-    "Media / Creative":      list(range(73000, 75000)) + list(range(90000, 92000)),
+    "Retail / Consumer":      list(range(45000, 48000)) + list(range(56000, 57000)),
+    "Manufacturing":          list(range(10000, 34000)),
+    "Construction":           list(range(41000, 44000)),
+    "Media / Creative":       list(range(73000, 75000)) + list(range(90000, 92000)),
 }
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_occupier_data(postcode: str) -> dict:
-    """
-    Returns occupier profile data for a postcode.
-
-    Returns:
-        {
-            "total": int,
-            "active": int,
-            "top_sector": str,
-            "sector_breakdown": dict,
-            "churn_estimate": str,
-            "profile_label": str,
-            "occ_score": int,   # 0-100
-            "summary": str,
-            "error": str | None,
-            "companies": list,  # first 10 company names
-        }
-    """
     api_key = st.secrets["api_keys"]["companies_house"]
     pc_clean = postcode.replace(" ", "").upper()
+    pc_spaced = postcode.strip().upper()
 
     try:
         resp = requests.get(
             BASE_URL,
             params={
-                "registered_office_address.postal_code": pc_clean,
+                "registered_office_address.postal_code": pc_spaced,
                 "company_status": "active",
                 "size": 100,
             },
@@ -59,11 +42,19 @@ def get_occupier_data(postcode: str) -> dict:
         )
         resp.raise_for_status()
         data = resp.json()
-        items = data.get("items", [])
-        total_results = data.get("total_results", len(items))
+        all_items = data.get("items", [])
+
+        # Filter to only companies whose postcode exactly matches
+        items = [
+            c for c in all_items
+            if c.get("registered_office_address", {})
+                .get("postal_code", "")
+                .replace(" ", "")
+                .upper() == pc_clean
+        ]
 
         if not items:
-            return _no_data("No companies found at this postcode")
+            return _no_data("No companies found at this exact postcode")
 
         # Extract SIC codes
         sic_codes = []
@@ -88,10 +79,13 @@ def get_occupier_data(postcode: str) -> dict:
 
         top_sector = sector_counts.most_common(1)[0][0] if sector_counts else "Mixed"
         total_sics = sum(sector_counts.values())
-        sector_pct = {k: round(v / total_sics * 100) for k, v in sector_counts.most_common(5)} if total_sics else {}
+        sector_pct = {
+            k: round(v / total_sics * 100)
+            for k, v in sector_counts.most_common(5)
+        } if total_sics else {}
 
-        # Profile label
-        active = len(items)  # We filtered active only
+        active = len(items)
+
         if active > 200:
             profile = "High-density occupier base"
         elif active > 100:
@@ -103,10 +97,8 @@ def get_occupier_data(postcode: str) -> dict:
         else:
             profile = "Low occupier density"
 
-        # Occupier model score
         occ_score = min(95, max(20, round((active / 200) * 100)))
 
-        # Churn estimate (proxy based on density — high density = more transience)
         if active > 200:
             churn = "~8% estimated annual churn"
         elif active > 100:
@@ -116,21 +108,19 @@ def get_occupier_data(postcode: str) -> dict:
         else:
             churn = "~4% estimated annual churn"
 
-        top_pct = list(sector_pct.items())[:2]
-        sector_str = " · ".join(f"{k} {v}%" for k, v in top_pct)
         summary = f"{active} active companies · {top_sector} dominant · {churn}"
 
         return {
-            "total": total_results,
-            "active": active,
-            "top_sector": top_sector,
+            "total":            data.get("total_results", active),
+            "active":           active,
+            "top_sector":       top_sector,
             "sector_breakdown": sector_pct,
-            "churn_estimate": churn,
-            "profile_label": profile,
-            "occ_score": occ_score,
-            "summary": summary,
-            "error": None,
-            "companies": company_names[:10],
+            "churn_estimate":   churn,
+            "profile_label":    profile,
+            "occ_score":        occ_score,
+            "summary":          summary,
+            "error":            None,
+            "companies":        company_names[:10],
         }
 
     except requests.exceptions.Timeout:
@@ -151,3 +141,14 @@ def _no_data(error: str) -> dict:
         "occ_score": 50, "summary": "Occupier data unavailable",
         "error": error, "companies": [],
     }
+```
+
+Save with **Ctrl+S**, then in the terminal type these one at a time:
+```
+git add api/companies_house.py
+```
+```
+git commit -m "Fix Companies House exact postcode matching"
+```
+```
+git push
