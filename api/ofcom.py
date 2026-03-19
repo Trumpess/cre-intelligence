@@ -1,7 +1,7 @@
 """
 api/ofcom.py
-Queries the local SQLite database built from the Ofcom Connected Nations
-postcode-level CSV. No API call — all local.
+Queries the local SQLite Ofcom database.
+Falls back to postcode sector average if exact match not found.
 """
 
 import sqlite3
@@ -9,136 +9,149 @@ import streamlit as st
 
 DB_PATH = "data/ofcom.db"
 
-# Operators we report on
-OPERATORS = ["ee", "o2", "three", "voda"]
-OP_LABELS = {"ee": "EE", "o2": "O2", "three": "Three", "voda": "Vodafone"}
-
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_connectivity_data(postcode: str) -> dict:
-    """
-    Returns connectivity data for a postcode from the local Ofcom SQLite DB.
-
-    Returns:
-        {
-            "fttp": bool,
-            "ufbb": bool,
-            "sfbb": bool,
-            "gigabit": bool,
-            "tier": str,          # "Gigabit" | "Ultrafast" | "Superfast" | "Basic"
-            "4g_operators": int,  # count of operators with good indoor 4G
-            "5g_operators": int,
-            "4g_detail": dict,    # {ee: bool, o2: bool, three: bool, voda: bool}
-            "5g_detail": dict,
-            "score": int,         # 0-100 connectivity score
-            "summary": str,
-            "error": str | None,
-            "raw": dict,
-        }
-    """
-    pc_norm = postcode.replace(" ", "").upper()
-
-    # Also try with space (sector unit format)
-    pc_spaced = postcode.strip().upper()
+    pc = postcode.replace(" ", "").upper().strip()
+    sector = pc[:-2]  # e.g. EC3V1AB -> EC3V1
 
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
 
+        # Try exact match first
         row = conn.execute(
-            "SELECT * FROM ofcom WHERE postcode = ? OR postcode = ? LIMIT 1",
-            (pc_norm, pc_spaced)
+            "SELECT * FROM ofcom WHERE postcode = ? LIMIT 1", (pc,)
         ).fetchone()
+
+        matched = "exact"
+
+        # Fall back to sector average
+        if row is None:
+            rows = conn.execute(
+                "SELECT * FROM ofcom WHERE postcode LIKE ? LIMIT 20",
+                (sector + "%",)
+            ).fetchall()
+            if rows:
+                matched = "sector"
+                # Average the numeric columns
+                sfbb    = _avg(rows, "sfbb")
+                ufbb    = _avg(rows, "ufbb")
+                gigabit = _avg(rows, "gigabit")
+                row = {"sfbb": sfbb, "ufbb": ufbb, "gigabit": gigabit}
+            else:
+                # Fall back to district (e.g. EC3V)
+                district = pc[:4] if len(pc) >= 4 else pc[:3]
+                rows = conn.execute(
+                    "SELECT * FROM ofcom WHERE postcode LIKE ? LIMIT 50",
+                    (district + "%",)
+                ).fetchall()
+                if rows:
+                    matched = "district"
+                    sfbb    = _avg(rows, "sfbb")
+                    ufbb    = _avg(rows, "ufbb")
+                    gigabit = _avg(rows, "gigabit")
+                    row = {"sfbb": sfbb, "ufbb": ufbb, "gigabit": gigabit}
+
         conn.close()
 
         if row is None:
-            return _no_data_result("Postcode not in Ofcom dataset")
+            return _no_data("Postcode not found in Ofcom dataset")
 
-        r = dict(row)
-
-        def _bool(key):
-            v = r.get(key)
-            if v is None:
-                return False
+        def _val(key):
             try:
-                return float(v) >= 50  # ≥50% coverage = treat as available
-            except (TypeError, ValueError):
-                return bool(v)
+                v = row[key]
+                return float(v) if v is not None else 0.0
+            except (TypeError, KeyError):
+                return 0.0
 
-        fttp    = _bool("fttp")
-        ufbb    = _bool("ufbb")
-        sfbb    = _bool("sfbb")
-        gigabit = _bool("gigabit")
+        sfbb_pct    = _val("sfbb")
+        ufbb_pct    = _val("ufbb")
+        gigabit_pct = _val("gigabit")
 
-        # Connectivity tier
-        if fttp or gigabit:
-            tier = "Gigabit (FTTP)"
+        # Determine tier based on availability percentages
+        fttp    = gigabit_pct >= 50
+        gigabit = gigabit_pct >= 50
+        ufbb    = ufbb_pct    >= 50
+        sfbb    = sfbb_pct    >= 50
+
+        if gigabit:
+            tier = "Gigabit / Full Fibre"
         elif ufbb:
-            tier = "Ultrafast"
+            tier = "Ultrafast (300Mbps+)"
         elif sfbb:
-            tier = "Superfast (FTTC)"
+            tier = "Superfast (30Mbps+)"
         else:
-            tier = "Basic / Sub-superfast"
-
-        # Mobile coverage
-        def _mob(prefix, op):
-            return _bool(f"{prefix}_{op}")
-
-        g4 = {op: _mob("4g", op) for op in OPERATORS}
-        g5 = {op: _mob("5g", op) for op in OPERATORS}
-        g4_count = sum(1 for v in g4.values() if v)
-        g5_count = sum(1 for v in g5.values() if v)
+            tier = "Sub-superfast"
 
         # Connectivity score
-        if fttp or gigabit:
+        if gigabit:
             conn_score = 95
         elif ufbb:
             conn_score = 78
         elif sfbb:
-            conn_score = 58
+            conn_score = 55
         else:
-            conn_score = 30
+            conn_score = 25
 
-        # Mobile modifier
-        mob_score = round((g4_count / 4) * 100)
-
-        # 4G operator summary text
-        g4_names = [OP_LABELS[op] for op in OPERATORS if g4[op]]
-        g5_names = [OP_LABELS[op] for op in OPERATORS if g5[op]]
-        summary = f"{tier} · {g4_count}/4 operators indoor 4G"
-        if g5_names:
-            summary += f" · {', '.join(g5_names)} indoor 5G"
+        # Build detail string
+        coverage_note = f"Based on {matched} postcode data"
+        detail = (
+            f"{'✓ Gigabit/FTTP available' if gigabit else '✗ No full fibre confirmed'}\n"
+            f"Superfast: {sfbb_pct:.0f}%  ·  Ultrafast: {ufbb_pct:.0f}%  ·  "
+            f"Gigabit: {gigabit_pct:.0f}%\n{coverage_note}"
+        )
 
         return {
-            "fttp": fttp,
-            "ufbb": ufbb,
-            "sfbb": sfbb,
-            "gigabit": gigabit,
-            "tier": tier,
-            "4g_operators": g4_count,
-            "5g_operators": g5_count,
-            "4g_detail": {OP_LABELS[op]: g4[op] for op in OPERATORS},
-            "5g_detail": {OP_LABELS[op]: g5[op] for op in OPERATORS},
-            "4g_good": g4_names,
-            "5g_good": g5_names,
-            "conn_score": conn_score,
-            "mob_score": mob_score,
-            "summary": summary,
-            "error": None,
-            "raw": r,
+            "fttp":          fttp,
+            "ufbb":          ufbb,
+            "sfbb":          sfbb,
+            "gigabit":       gigabit,
+            "tier":          tier,
+            "sfbb_pct":      sfbb_pct,
+            "ufbb_pct":      ufbb_pct,
+            "gigabit_pct":   gigabit_pct,
+            "4g_operators":  0,
+            "5g_operators":  0,
+            "4g_detail":     {},
+            "5g_detail":     {},
+            "4g_good":       [],
+            "5g_good":       [],
+            "conn_score":    conn_score,
+            "mob_score":     50,
+            "detail":        detail,
+            "summary":       f"{tier} · {gigabit_pct:.0f}% gigabit coverage",
+            "matched":       matched,
+            "error":         None,
+            "raw":           dict(row),
         }
 
     except Exception as e:
-        return _no_data_result(f"Ofcom DB error: {e}")
+        return _no_data(f"Ofcom DB error: {e}")
 
 
-def _no_data_result(error_msg: str) -> dict:
+def _avg(rows, key):
+    vals = []
+    for r in rows:
+        try:
+            v = r[key]
+            if v is not None:
+                vals.append(float(v))
+        except (TypeError, KeyError):
+            pass
+    return sum(vals) / len(vals) if vals else 0.0
+
+
+def _no_data(error: str) -> dict:
     return {
         "fttp": False, "ufbb": False, "sfbb": False, "gigabit": False,
-        "tier": "Unknown", "4g_operators": 0, "5g_operators": 0,
+        "tier": "Unknown", "sfbb_pct": 0, "ufbb_pct": 0, "gigabit_pct": 0,
+        "4g_operators": 0, "5g_operators": 0,
         "4g_detail": {}, "5g_detail": {}, "4g_good": [], "5g_good": [],
         "conn_score": 50, "mob_score": 50,
+        "detail": "Connectivity data unavailable",
         "summary": "Data unavailable",
-        "error": error_msg,
+        "matched": "none",
+        "error": error,
         "raw": {},
     }
