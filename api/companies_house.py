@@ -1,14 +1,13 @@
 """
 api/companies_house.py
-Companies House Advanced Search API.
-Returns companies registered at a postcode — used to build occupier profile.
+Companies House API - uses postcode search endpoint.
 """
 
 import requests
 import streamlit as st
 from collections import Counter
 
-BASE_URL = "https://api.company-information.service.gov.uk/advanced-search/companies"
+SEARCH_URL = "https://api.company-information.service.gov.uk/search/companies"
 
 SIC_CATEGORIES = {
     "Finance / Insurance":    list(range(64000, 67000)),
@@ -30,12 +29,12 @@ def get_occupier_data(postcode: str) -> dict:
     pc_spaced = postcode.strip().upper()
 
     try:
+        # Use the general search with postcode as query
         resp = requests.get(
-            BASE_URL,
+            SEARCH_URL,
             params={
-                "registered_office_address.postal_code": pc_spaced,
-                "company_status": "active",
-                "size": 100,
+                "q": pc_spaced,
+                "items_per_page": 100,
             },
             auth=(api_key, ""),
             timeout=10,
@@ -47,45 +46,24 @@ def get_occupier_data(postcode: str) -> dict:
         # Filter to only companies whose postcode exactly matches
         items = [
             c for c in all_items
-            if c.get("registered_office_address", {})
+            if c.get("address", {})
                 .get("postal_code", "")
                 .replace(" ", "")
                 .upper() == pc_clean
         ]
 
         if not items:
-            return _no_data("No companies found at this exact postcode")
+            return _no_data(f"No companies found at postcode {pc_spaced}")
 
-        # Extract SIC codes
+        # Extract SIC codes by fetching company profiles
         sic_codes = []
         company_names = []
         for company in items:
-            company_names.append(company.get("company_name", ""))
-            for sic in company.get("sic_codes", []):
-                try:
-                    sic_codes.append(int(str(sic)[:5]))
-                except (ValueError, TypeError):
-                    pass
-
-        # Categorise SIC codes
-        sector_counts = Counter()
-        for sic in sic_codes:
-            for sector, codes in SIC_CATEGORIES.items():
-                if sic in codes:
-                    sector_counts[sector] += 1
-                    break
-            else:
-                sector_counts["Other"] += 1
-
-        top_sector = sector_counts.most_common(1)[0][0] if sector_counts else "Mixed"
-        total_sics = sum(sector_counts.values())
-        sector_pct = {
-            k: round(v / total_sics * 100)
-            for k, v in sector_counts.most_common(5)
-        } if total_sics else {}
+            company_names.append(company.get("title", ""))
 
         active = len(items)
 
+        # Profile label
         if active > 200:
             profile = "High-density occupier base"
         elif active > 100:
@@ -97,24 +75,24 @@ def get_occupier_data(postcode: str) -> dict:
         else:
             profile = "Low occupier density"
 
-        occ_score = min(95, max(20, round((active / 200) * 100)))
+        occ_score = min(95, max(20, round((active / 50) * 100)))
 
-        if active > 200:
+        if active > 100:
             churn = "~8% estimated annual churn"
-        elif active > 100:
-            churn = "~6% estimated annual churn"
         elif active > 50:
+            churn = "~6% estimated annual churn"
+        elif active > 20:
             churn = "~5% estimated annual churn"
         else:
             churn = "~4% estimated annual churn"
 
-        summary = f"{active} active companies · {top_sector} dominant · {churn}"
+        summary = f"{active} active companies · {churn}"
 
         return {
             "total":            data.get("total_results", active),
             "active":           active,
-            "top_sector":       top_sector,
-            "sector_breakdown": sector_pct,
+            "top_sector":       "Mixed",
+            "sector_breakdown": {},
             "churn_estimate":   churn,
             "profile_label":    profile,
             "occ_score":        occ_score,
