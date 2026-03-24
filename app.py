@@ -475,21 +475,23 @@ with tab1:
             st.session_state.ws_verified_by = (staff_initials or staff_name or "MN").strip().upper() or "MN"
             st.session_state.ws_verified_at = datetime.now().strftime("%d %b %Y")
             st.rerun()
-    if st.session_state.ws_status == "certified":
+if st.session_state.ws_status == "certified":
         with wc2:
-            scheme = st.selectbox("Scheme",["","WiredScore","SmartScore","Both"],
+            scheme_opts = ["","WiredScore","SmartScore","Both"]
+            scheme_idx  = scheme_opts.index(st.session_state.ws_scheme) if st.session_state.ws_scheme in scheme_opts else 0
+            scheme = st.selectbox("Scheme", scheme_opts, index=scheme_idx,
                                   label_visibility="collapsed")
-            if scheme != st.session_state.ws_scheme:
-                st.session_state.ws_scheme = scheme
+            st.session_state.ws_scheme = scheme
         with wc3:
-            level = st.selectbox("Level",["","Certified","Silver","Gold","Platinum"],
+            level_opts = ["","Certified","Silver","Gold","Platinum"]
+            level_idx  = level_opts.index(st.session_state.ws_level) if st.session_state.ws_level in level_opts else 0
+            level = st.selectbox("Level", level_opts, index=level_idx,
                                  label_visibility="collapsed")
-            if level != st.session_state.ws_level:
-                st.session_state.ws_level = level
+            st.session_state.ws_level = level
     lc1, lc2 = st.columns([1,2])
     with lc1:
         st.link_button("🔗 WiredScore certified buildings map ↗",
-                       "https://wiredscore.com/certified-buildings/",
+                       "https://wiredscore.com/map/",
                        use_container_width=True)
     if st.session_state.ws_verified_at:
         with lc2:
