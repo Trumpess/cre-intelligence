@@ -35,6 +35,9 @@ body,.stApp{background:#f4f6f9;color:#0f172a}
 [data-testid="stSidebar"] select{
     background:#1c2333!important;color:#e8edf5!important;
     border:1px solid #2a3347!important;border-radius:5px!important}
+[data-testid="stSidebar"] input::placeholder,
+[data-testid="stSidebar"] textarea::placeholder{
+    color:#6b7a99!important;opacity:1!important}
 [data-testid="stSidebar"] .stButton button{
     background:#00c8f0!important;color:#0b1829!important;
     font-weight:700!important;border:none!important;border-radius:6px!important}
