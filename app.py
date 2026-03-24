@@ -379,30 +379,31 @@ with tab1:
     st.markdown("")
     ba1, ba2, ba3, ba4 = st.columns([1,1,1,2])
     with ba1:
-        # Update report with current WiredScore state before PDF
-        r["wiredScore"] = {
-            "status":     st.session_state.ws_status,
-            "scheme":     st.session_state.ws_scheme,
-            "level":      st.session_state.ws_level,
-            "verifiedBy": st.session_state.ws_verified_by,
-            "verifiedAt": st.session_state.ws_verified_at,
-        }
-        r["gaps"]      = generate_gaps(raw["ofcom"], raw["epc"], raw["ch"],
-                                       raw["flood"], raw["crime"], st.session_state.ws_status)
-        r["position"]  = generate_market_position(raw["ofcom"], raw["epc"], raw["ch"],
-                                                   raw["flood"], raw["crime"],
-                                                   st.session_state.ws_status, r["score"])
-        r["checklist"] = generate_checklist(raw["ofcom"], raw["epc"], raw["ch"],
-                                            raw["flood"], raw["crime"],
-                                            st.session_state.ws_status, r["postcode"])
-        pdf_bytes = generate_briefing_pdf(r, r.get("angle","owner"))
-        st.download_button(
-            "⬇ Download Briefing",
-            data=pdf_bytes,
-            file_name=f"MN-Briefing-{r['postcode'].replace(' ','')}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        if st.button("⬇ Download Briefing", use_container_width=True, key="pdf_btn"):
+            r["wiredScore"] = {
+                "status":     st.session_state.ws_status,
+                "scheme":     st.session_state.ws_scheme,
+                "level":      st.session_state.ws_level,
+                "verifiedBy": st.session_state.ws_verified_by,
+                "verifiedAt": st.session_state.ws_verified_at,
+            }
+            r["gaps"]      = generate_gaps(raw["ofcom"], raw["epc"], raw["ch"],
+                                           raw["flood"], raw["crime"], st.session_state.ws_status)
+            r["position"]  = generate_market_position(raw["ofcom"], raw["epc"], raw["ch"],
+                                                       raw["flood"], raw["crime"],
+                                                       st.session_state.ws_status, r["score"])
+            r["checklist"] = generate_checklist(raw["ofcom"], raw["epc"], raw["ch"],
+                                                raw["flood"], raw["crime"],
+                                                st.session_state.ws_status, r["postcode"])
+            pdf_bytes = generate_briefing_pdf(r, r.get("angle","owner"))
+            st.download_button(
+                "⬇ Click to save PDF",
+                data=pdf_bytes,
+                file_name=f"MN-Briefing-{r['postcode'].replace(' ','')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="pdf_download"
+            )
     with ba2:
         already = any(s["id"]==r["id"] for s in st.session_state.saved_reports)
         if already:
