@@ -380,7 +380,7 @@ with tab1:
 
     # ── Action buttons ─────────────────────────────────────────────────────
     st.markdown("")
-    ba1, ba2, ba3, ba4 = st.columns([1,1,1,2])
+    ba1, ba2, ba3, ba4 = st.columns([1,1,1,1])
     with ba1:
         if st.button("⬇ Download Briefing", use_container_width=True, key="pdf_btn"):
             r["wiredScore"] = {
@@ -416,12 +416,23 @@ with tab1:
                 st.session_state.saved_reports.append(dict(r))
                 st.success("Saved.")
                 st.rerun()
-    with ba3:
-        st.link_button(
-            "📡 Ofcom Checker ↗",
-            f"https://checker.ofcom.org.uk/en-gb/mobile-coverage?postcode={r['postcode'].replace(' ','%20')}",
-            use_container_width=True
-        )
+        with ba3:
+            st.link_button(
+                "📡 Ofcom Checker ↗",
+                f"https://checker.ofcom.org.uk/en-gb/mobile-coverage?postcode={r['postcode'].replace(' ','%20')}",
+                use_container_width=True
+            )
+    with ba4:
+        if st.button("🔄 Refresh Data", use_container_width=True):
+            get_coordinates.clear()
+            get_connectivity_data.clear()
+            get_epc_data.clear()
+            get_occupier_data.clear()
+            get_flood_risk_by_postcode.clear()
+            get_crime_data.clear()
+            get_uprn.clear()
+            st.session_state.current_report = None
+            st.rerun()
 
     st.divider()
 
