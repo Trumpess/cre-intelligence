@@ -475,7 +475,7 @@ with tab1:
             st.session_state.ws_verified_by = (staff_initials or staff_name or "MN").strip().upper() or "MN"
             st.session_state.ws_verified_at = datetime.now().strftime("%d %b %Y")
             st.rerun()
-if st.session_state.ws_status == "certified":
+    if st.session_state.ws_status == "certified":
         with wc2:
             scheme_opts = ["","WiredScore","SmartScore","Both"]
             scheme_idx  = scheme_opts.index(st.session_state.ws_scheme) if st.session_state.ws_scheme in scheme_opts else 0
