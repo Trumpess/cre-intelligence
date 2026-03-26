@@ -884,6 +884,34 @@ with tab3:
                         mime="application/pdf",
                         use_container_width=True,
                     )
+            with sa1:
+                if len(saved) > 0:
+                    import json as _json
+                    export = {
+                        "source_app": "building_intelligence",
+                        "report_type": "saved_briefings",
+                        "exported_at": datetime.now().strftime("%d %b %Y %H:%M"),
+                        "briefings": [{
+                            "postcode":  r.get("postcode",""),
+                            "company":   r.get("prospect",{}).get("company",""),
+                            "score":     r.get("score",0),
+                            "verdict":   r.get("position",{}).get("verdict",""),
+                            "scoreLabel":r.get("scoreLabel",""),
+                            "savedAt":   r.get("savedAt",""),
+                            "angle":     r.get("angle",""),
+                            "gaps":      r.get("gaps",[]),
+                            "positives": r.get("positives",[]),
+                            "wiredScore":r.get("wiredScore",{}),
+                            "companies": r.get("companies",[]),
+                        } for r in saved]
+                    }
+                    st.download_button(
+                        f"📤 Export {len(saved)} Briefing(s) for Master Report",
+                        data=_json.dumps(export, indent=2, default=str),
+                        file_name=f"building_intelligence_export_{datetime.now().strftime('%Y%m%d')}.json",
+                        mime="application/json",
+                        use_container_width=True,
+                    )
 
     if st.session_state.get("confirm_clear"):
         st.warning("Click Clear All again to confirm.")
