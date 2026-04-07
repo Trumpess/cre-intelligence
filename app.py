@@ -113,6 +113,11 @@ for k, v in {
     "ws_status":"unconfirmed","ws_scheme":"","ws_level":"",
     "ws_verified_by":"","ws_verified_at":"","selected_ids":set(),
     "active_tab": 0,
+    "mob_ee_indoor":"","mob_ee_outdoor":"",
+    "mob_o2_indoor":"","mob_o2_outdoor":"",
+    "mob_three_indoor":"","mob_three_outdoor":"",
+    "mob_voda_indoor":"","mob_voda_outdoor":"",
+    "mob_verified_by":"","mob_verified_at":"",
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -224,6 +229,14 @@ with tab1:
             st.session_state.ws_level       = ""
             st.session_state.ws_verified_by = ""
             st.session_state.ws_verified_at = ""
+            for _mob_key in [
+                "mob_ee_indoor","mob_ee_outdoor",
+                "mob_o2_indoor","mob_o2_outdoor",
+                "mob_three_indoor","mob_three_outdoor",
+                "mob_voda_indoor","mob_voda_outdoor",
+                "mob_verified_by","mob_verified_at",
+            ]:
+                st.session_state[_mob_key] = ""
 
             score, score_label, score_colour = calculate_score(ofcom, epc, ch, flood, crime)
             gaps      = generate_gaps(ofcom, epc, ch, flood, crime, "unconfirmed")
@@ -307,6 +320,7 @@ with tab1:
                 "checklist":   checklist,
                 "raw":         {"ofcom":ofcom,"epc":epc,"ch":ch,"flood":flood,"crime":crime},
                 "wiredScore":  {"status":"unconfirmed","scheme":"","level":"","verifiedBy":"","verifiedAt":""},
+                "mobile":      {"EE":{},"O2":{},"Three":{},"Vodafone":{},"verifiedBy":"","verifiedAt":""},
                 "companies":   ch.get("companies",[]),
             }
             st.session_state.current_report = report
@@ -538,16 +552,77 @@ with tab1:
                 unsafe_allow_html=True
             )
 
-    # Mobile note
+    # ── Mobile Coverage Panel ──────────────────────────────────────────────
+    MOB_OPTS = ["", "Good", "Variable", "None"]
+    OPERATORS = [
+        ("EE",        "mob_ee_indoor",    "mob_ee_outdoor"),
+        ("O2",        "mob_o2_indoor",    "mob_o2_outdoor"),
+        ("Three",     "mob_three_indoor", "mob_three_outdoor"),
+        ("Vodafone",  "mob_voda_indoor",  "mob_voda_outdoor"),
+    ]
+
+    mob_any = any(st.session_state.get(k) for _, k, _ in OPERATORS)
+    mob_icon = "📶" if mob_any else "📱"
+    st.markdown(f"#### {mob_icon} Mobile Coverage")
     st.markdown(
-        f'<div style="background:#f8faff;border:1px solid #e2e8f0;border-radius:6px;'
-        f'padding:10px 16px;font-size:12.5px;color:#475569;margin-bottom:4px">'
-        f'📱 <strong>Indoor mobile coverage</strong> — per-postcode operator data coming soon. '
-        f'<a href="https://checker.ofcom.org.uk/en-gb/mobile-coverage?postcode={r["postcode"].replace(" ","%20")}" '
-        f'target="_blank" style="color:#0099b8">Check {r["postcode"]} on Ofcom ↗</a>'
-        f'</div>',
-        unsafe_allow_html=True
+        "No API is available for per-postcode mobile data. "
+        "Check Ofcom manually and record each operator's result here — this saves with the briefing and PDF."
     )
+    lm1, lm2 = st.columns([1, 2])
+    with lm1:
+        st.link_button(
+            f"📡 Ofcom Mobile Checker — {r['postcode']} ↗",
+            f"https://checker.ofcom.org.uk/en-gb/mobile-coverage?postcode={r['postcode'].replace(' ','%20')}",
+            use_container_width=True,
+        )
+
+    mob_cols = st.columns(4)
+    mob_changed = False
+    for col, (label, key_in, key_out) in zip(mob_cols, OPERATORS):
+        with col:
+            st.markdown(
+                f'<div style="font-size:11px;font-weight:700;color:#0b1829;'
+                f'letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">{label}</div>',
+                unsafe_allow_html=True,
+            )
+            new_in = st.selectbox(
+                f"{label} Indoor",
+                MOB_OPTS,
+                index=MOB_OPTS.index(st.session_state.get(key_in, "") or ""),
+                key=f"sel_{key_in}",
+                label_visibility="collapsed",
+                format_func=lambda x: "— Indoor —" if x == "" else f"Indoor: {x}",
+            )
+            new_out = st.selectbox(
+                f"{label} Outdoor",
+                MOB_OPTS,
+                index=MOB_OPTS.index(st.session_state.get(key_out, "") or ""),
+                key=f"sel_{key_out}",
+                label_visibility="collapsed",
+                format_func=lambda x: "— Outdoor —" if x == "" else f"Outdoor: {x}",
+            )
+            if new_in != st.session_state.get(key_in, ""):
+                st.session_state[key_in] = new_in
+                mob_changed = True
+            if new_out != st.session_state.get(key_out, ""):
+                st.session_state[key_out] = new_out
+                mob_changed = True
+
+    if mob_changed:
+        st.session_state["mob_verified_by"] = (staff_initials or staff_name or "MN").strip().upper() or "MN"
+        st.session_state["mob_verified_at"] = datetime.now().strftime("%d %b %Y")
+        st.rerun()
+
+    if st.session_state.get("mob_verified_at"):
+        st.caption(f"Recorded {st.session_state['mob_verified_at']} by {st.session_state['mob_verified_by']}")
+
+    # Push mobile data into the live report so Save and PDF pick it up
+    r["mobile"] = {
+        op: {"indoor": st.session_state.get(ki, ""), "outdoor": st.session_state.get(ko, "")}
+        for op, ki, ko in OPERATORS
+    }
+    r["mobile"]["verifiedBy"] = st.session_state.get("mob_verified_by", "")
+    r["mobile"]["verifiedAt"] = st.session_state.get("mob_verified_at", "")
 
     # Companies
     companies = r.get("companies",[])
@@ -902,6 +977,7 @@ with tab3:
                             "gaps":      r.get("gaps",[]),
                             "positives": r.get("positives",[]),
                             "wiredScore":r.get("wiredScore",{}),
+                            "mobile":    r.get("mobile",{}),
                             "companies": r.get("companies",[]),
                         } for r in saved]
                     }
@@ -989,6 +1065,17 @@ with tab3:
                     st.session_state.ws_level         = r.get("wiredScore",{}).get("level","")
                     st.session_state.ws_verified_by   = r.get("wiredScore",{}).get("verifiedBy","")
                     st.session_state.ws_verified_at   = r.get("wiredScore",{}).get("verifiedAt","")
+                    _mob = r.get("mobile", {})
+                    for _op, _ki, _ko in [
+                        ("EE","mob_ee_indoor","mob_ee_outdoor"),
+                        ("O2","mob_o2_indoor","mob_o2_outdoor"),
+                        ("Three","mob_three_indoor","mob_three_outdoor"),
+                        ("Vodafone","mob_voda_indoor","mob_voda_outdoor"),
+                    ]:
+                        st.session_state[_ki] = _mob.get(_op, {}).get("indoor", "")
+                        st.session_state[_ko] = _mob.get(_op, {}).get("outdoor", "")
+                    st.session_state["mob_verified_by"] = _mob.get("verifiedBy", "")
+                    st.session_state["mob_verified_at"] = _mob.get("verifiedAt", "")
                     st.rerun()
             with bc4:
                 if st.button("✕", key=f"del_{r['id']}", use_container_width=True):
