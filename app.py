@@ -392,51 +392,24 @@ with tab1:
             unsafe_allow_html=True
         )
 
-    # ── Action buttons ─────────────────────────────────────────────────────
+    # ── Top controls ────────────────────────────────────────────────────────
     st.markdown("")
-    ba1, ba2, ba3, ba4 = st.columns([1,1,1,1])
-    with ba1:
-        if st.button("⬇ Download Briefing", use_container_width=True, key="pdf_btn"):
-            r["wiredScore"] = {
-                "status":     st.session_state.ws_status,
-                "scheme":     st.session_state.ws_scheme,
-                "level":      st.session_state.ws_level,
-                "verifiedBy": st.session_state.ws_verified_by,
-                "verifiedAt": st.session_state.ws_verified_at,
-            }
-            r["gaps"]      = generate_gaps(raw["ofcom"], raw["epc"], raw["ch"],
-                                           raw["flood"], raw["crime"], st.session_state.ws_status)
-            r["position"]  = generate_market_position(raw["ofcom"], raw["epc"], raw["ch"],
-                                                       raw["flood"], raw["crime"],
-                                                       st.session_state.ws_status, r["score"])
-            r["checklist"] = generate_checklist(raw["ofcom"], raw["epc"], raw["ch"],
-                                                raw["flood"], raw["crime"],
-                                                st.session_state.ws_status, r["postcode"])
-            pdf_bytes = generate_briefing_pdf(r, r.get("angle","owner"))
-            st.download_button(
-                "⬇ Click to save PDF",
-                data=pdf_bytes,
-                file_name=f"MN-Briefing-{r['postcode'].replace(' ','')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                key="pdf_download"
-            )
-    with ba2:
-        already = any(s["id"]==r["id"] for s in st.session_state.saved_reports)
-        if already:
-            st.button("✓ Saved", disabled=True, use_container_width=True)
-        else:
-            if st.button("🔖 Save Briefing", use_container_width=True):
-                st.session_state.saved_reports.append(dict(r))
-                st.success("Saved.")
-                st.rerun()
-        with ba3:
-            st.link_button(
-                "📡 Ofcom Checker ↗",
-                f"https://checker.ofcom.org.uk/en-gb/mobile-coverage?postcode={r['postcode'].replace(' ','%20')}",
-                use_container_width=True
-            )
-    with ba4:
+    st.markdown(
+        '<div style="background:#f0f9ff;border:1px solid #7dd3fc;border-left:4px solid #0099b8;'
+        'border-radius:6px;padding:10px 16px;font-size:13px;color:#0369a1;margin-bottom:8px">'
+        '📋 <strong>Next steps:</strong> Check and record WiredScore status and mobile coverage '
+        'in the sections below, then scroll to the bottom to download or save the briefing.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    tc1, tc2 = st.columns([1, 1])
+    with tc1:
+        st.link_button(
+            "📡 Ofcom Mobile Checker ↗",
+            f"https://checker.ofcom.org.uk/en-gb/mobile-coverage?postcode={r['postcode'].replace(' ','%20')}",
+            use_container_width=True
+        )
+    with tc2:
         if st.button("🔄 Refresh Data", use_container_width=True):
             get_coordinates.clear()
             get_connectivity_data.clear()
