@@ -25,6 +25,24 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Password ───────────────────────────────────────────────────────────────────
+PASSWORD = "mnbuildings2026"
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.title("🏢 MN Building Intelligence Platform")
+    st.subheader("Please enter the access password")
+    pw = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if pw == PASSWORD:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password")
+    st.stop()
+
 st.markdown("""
 <style>
 body,.stApp{background:#f4f6f9;color:#0f172a}
