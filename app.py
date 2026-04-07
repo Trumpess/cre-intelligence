@@ -779,6 +779,45 @@ with tab1:
             unsafe_allow_html=True
         )
 
+    # ── Bottom action buttons ───────────────────────────────────────────────
+    st.divider()
+    bb1, bb2 = st.columns(2)
+    with bb1:
+        if st.button("⬇ Download Briefing", use_container_width=True, key="pdf_btn_btm"):
+            r["wiredScore"] = {
+                "status":     st.session_state.ws_status,
+                "scheme":     st.session_state.ws_scheme,
+                "level":      st.session_state.ws_level,
+                "verifiedBy": st.session_state.ws_verified_by,
+                "verifiedAt": st.session_state.ws_verified_at,
+            }
+            r["gaps"]      = generate_gaps(raw["ofcom"], raw["epc"], raw["ch"],
+                                           raw["flood"], raw["crime"], st.session_state.ws_status)
+            r["position"]  = generate_market_position(raw["ofcom"], raw["epc"], raw["ch"],
+                                                       raw["flood"], raw["crime"],
+                                                       st.session_state.ws_status, r["score"])
+            r["checklist"] = generate_checklist(raw["ofcom"], raw["epc"], raw["ch"],
+                                                raw["flood"], raw["crime"],
+                                                st.session_state.ws_status, r["postcode"])
+            pdf_bytes = generate_briefing_pdf(r, r.get("angle","owner"))
+            st.download_button(
+                "⬇ Click to save PDF",
+                data=pdf_bytes,
+                file_name=f"MN-Briefing-{r['postcode'].replace(' ','')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="pdf_download_btm"
+            )
+    with bb2:
+        already_btm = any(s["id"]==r["id"] for s in st.session_state.saved_reports)
+        if already_btm:
+            st.button("✓ Saved", disabled=True, use_container_width=True, key="save_btm_done")
+        else:
+            if st.button("🔖 Save Briefing", use_container_width=True, key="save_btm"):
+                st.session_state.saved_reports.append(dict(r))
+                st.success("Saved.")
+                st.rerun()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — PORTFOLIO
