@@ -302,6 +302,62 @@ def generate_briefing_pdf(report: dict, angle: str) -> bytes:
     ]))
     story.append(ws_t)
 
+    # Mobile Coverage
+    mob      = report.get("mobile", {})
+    MOB_OPS  = ["EE", "O2", "Three", "Vodafone"]
+    MOB_COLS = {"Good": GREEN, "Variable": AMBER, "None": RED, "": GREY}
+
+    def _mob_cell(op, data):
+        indoor  = data.get("indoor",  "")
+        outdoor = data.get("outdoor", "")
+        ci = MOB_COLS.get(indoor,  GREY)
+        co = MOB_COLS.get(outdoor, GREY)
+        return [
+            Paragraph(op, S["monob"]),
+            Paragraph(
+                f'<font color="{ci.hexval()}"><b>▲ {indoor or "—"}</b></font>',
+                ParagraphStyle("mi", fontName="Helvetica-Bold", fontSize=8,
+                               textColor=ci, leading=11)
+            ),
+            Paragraph(
+                f'<font color="{co.hexval()}"><b>↑ {outdoor or "—"}</b></font>',
+                ParagraphStyle("mo2", fontName="Helvetica-Bold", fontSize=8,
+                               textColor=co, leading=11)
+            ),
+        ]
+
+    mob_any = any(
+        mob.get(op, {}).get("indoor") or mob.get(op, {}).get("outdoor")
+        for op in MOB_OPS
+    )
+
+    story.append(Spacer(1, 3*mm))
+    mob_cells = [_mob_cell(op, mob.get(op, {})) for op in MOB_OPS]
+    mob_legend = [
+        Paragraph("MOBILE COVERAGE", S["monob"]),
+        Paragraph("▲ = Indoor  ↑ = Outdoor", S["small"]),
+        Paragraph(
+            f"{'Recorded ' + mob.get('verifiedAt','') + ' by ' + mob.get('verifiedBy','') if mob_any else 'Not yet recorded — check checker.ofcom.org.uk'}",
+            S["mono"]
+        ),
+    ]
+    mob_t = Table(
+        [[mob_legend] + mob_cells],
+        colWidths=[44*mm] + [(CW - 44*mm) / 4] * 4
+    )
+    mob_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LGREY),
+        ("BACKGROUND",    (0, 0), (0, -1),  LGREY),
+        ("BOX",           (0, 0), (-1, -1), 0.5, TEAL),
+        ("LINEBELOW",     (0, 0), (-1, -1), 2,   TEAL),
+        ("LINEBEFORE",    (1, 0), (-1, -1), 0.5, MGREY),
+        ("TOPPADDING",    (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(mob_t)
+
     # Internal notes
     if P.get("notes"):
         story.append(Spacer(1, 3*mm))
